@@ -3,6 +3,10 @@
 Cloudflare Workers backend for [InboxAngel](https://github.com/Fellowship-dev/inbox-angel).
 Handles inbound email parsing, DMARC aggregate report processing, DNS provisioning, and the API surface consumed by the frontend.
 
+## Philosophy
+
+Run it yourself or use our hosted service. Either way, your data lives in a database you control and can export at any time. Open source, no lock-in.
+
 ## Relationship to inbox-angel
 
 ```
