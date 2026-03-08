@@ -3,13 +3,15 @@
 // Auth provider is pluggable — see src/api/auth.ts.
 //
 // Routes:
-//   GET  /health                     — liveness probe (unauthenticated)
-//   GET  /api/domains                — list customer's monitored domains
-//   POST /api/domains                — add a domain
-//   DELETE /api/domains/:id          — remove a domain
-//   GET  /api/reports                — list recent aggregate reports
-//   GET  /api/reports/:id            — single report with per-IP records
-//   GET  /api/check-results          — recent free check results (last 20)
+//   GET  /health                          — liveness probe (unauthenticated)
+//   POST /api/check-sessions              — create a free-check session (unauthenticated)
+//   GET  /api/check-sessions/:token       — poll for free-check result (unauthenticated)
+//   GET  /api/domains                     — list customer's monitored domains
+//   POST /api/domains                     — add a domain
+//   DELETE /api/domains/:id               — remove a domain
+//   GET  /api/reports                     — list recent aggregate reports
+//   GET  /api/reports/:id                 — single report with per-IP records
+//   GET  /api/check-results               — recent free check results (last 20)
 
 import { Env } from '../index';
 import { requireAuth, AuthError } from './auth';
@@ -19,6 +21,7 @@ import {
   insertDomain,
   updateDomainDnsRecord,
   getRecentReports,
+  getCheckResultByToken,
 } from '../db/queries';
 import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
 
@@ -177,6 +180,21 @@ export async function handleApi(
   // Unauthenticated routes
   if (path === '/health' && method === 'GET') {
     return json({ ok: true, ts: Date.now() });
+  }
+
+  // POST /api/check-sessions — generate a unique free-check email for a browser session
+  if (path === '/api/check-sessions' && method === 'POST') {
+    const token = crypto.randomUUID();
+    const reportsDomain = env.REPORTS_DOMAIN || 'reports.inboxangel.io';
+    return json({ token, email: `check-${token}@${reportsDomain}` }, 201);
+  }
+
+  // GET /api/check-sessions/:token — poll until the check email has been processed
+  const sessionMatch = path.match(/^\/api\/check-sessions\/([^/]+)$/);
+  if (sessionMatch && method === 'GET') {
+    const result = await getCheckResultByToken(env.DB, sessionMatch[1]);
+    if (!result) return json({ status: 'pending' }, 202);
+    return json({ status: 'done', result });
   }
 
   // All /api/* routes require auth

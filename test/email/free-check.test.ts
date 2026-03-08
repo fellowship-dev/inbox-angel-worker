@@ -22,7 +22,8 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     CLOUDFLARE_ACCOUNT_ID: '',
     CLOUDFLARE_ZONE_ID: '',
     CLOUDFLARE_API_TOKEN: '',
-    FROM_EMAIL: 'check@reports.inboxangel.com',
+    REPORTS_DOMAIN: 'reports.inboxangel.io',
+    FROM_EMAIL: 'check@reports.inboxangel.io',
     ...overrides,
   };
 }
@@ -43,7 +44,7 @@ function makeMessage(overrides: Partial<{
 
   return {
     from: overrides.from ?? 'user@example.com',
-    to: overrides.to ?? 'check@reports.inboxangel.com',
+    to: overrides.to ?? 'check@reports.inboxangel.io',
     headers,
     reply: vi.fn().mockResolvedValue(undefined),
     forward: vi.fn(),
@@ -92,7 +93,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage();
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     expect(message.reply).toHaveBeenCalledOnce();
     const arg = (message.reply as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -104,7 +105,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage({ from: 'founder@startupxyz.com' });
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     const stream = (message.reply as ReturnType<typeof vi.fn>).mock.calls[0][0] as ReadableStream;
     const reader = stream.getReader();
@@ -118,7 +119,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage();
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     const stream = (message.reply as ReturnType<typeof vi.fn>).mock.calls[0][0] as ReadableStream;
     const reader = stream.getReader();
@@ -126,7 +127,7 @@ describe('handleFreeCheck', () => {
     const text = new TextDecoder().decode(value);
     expect(text).toContain('From:');
     expect(text).toContain('Subject:');
-    expect(text).toContain('check@reports.inboxangel.com');
+    expect(text).toContain('check@reports.inboxangel.io');
   });
 
   it('stores result in D1', async () => {
@@ -134,7 +135,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage();
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     expect(env.DB.prepare).toHaveBeenCalled();
   });
@@ -144,7 +145,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage({ from: 'hello@my-company.io' });
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     const stream = (message.reply as ReturnType<typeof vi.fn>).mock.calls[0][0] as ReadableStream;
     const reader = stream.getReader();
@@ -158,7 +159,7 @@ describe('handleFreeCheck', () => {
     const message = makeMessage();
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     expect(message.reply).toHaveBeenCalledOnce();
   });
@@ -170,7 +171,7 @@ describe('handleFreeCheck', () => {
     });
     const env = makeEnv();
 
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     const stream = (message.reply as ReturnType<typeof vi.fn>).mock.calls[0][0] as ReadableStream;
     const reader = stream.getReader();
@@ -183,7 +184,7 @@ describe('handleFreeCheck', () => {
     mockDohEmpty();
     const message: ForwardableEmailMessage = {
       from: 'user@nodomain.com',
-      to: 'check@reports.inboxangel.com',
+      to: 'check@reports.inboxangel.io',
       headers: new Headers(), // no auth-results
       reply: vi.fn().mockResolvedValue(undefined),
       forward: vi.fn(),
@@ -191,7 +192,7 @@ describe('handleFreeCheck', () => {
     } as unknown as ForwardableEmailMessage;
 
     const env = makeEnv();
-    await handleFreeCheck(message, env);
+    await handleFreeCheck(message, env, 'test-token');
 
     expect(message.reply).toHaveBeenCalledOnce();
   });
@@ -209,7 +210,7 @@ describe('handleFreeCheck', () => {
 
     const env = makeEnv({ DB: brokenDb });
     // Should not throw — DB failure is swallowed with console.error
-    await expect(handleFreeCheck(message, env)).resolves.toBeUndefined();
+    await expect(handleFreeCheck(message, env, 'test-token')).resolves.toBeUndefined();
     expect(message.reply).toHaveBeenCalledOnce();
   });
 });

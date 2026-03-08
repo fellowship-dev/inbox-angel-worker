@@ -46,6 +46,7 @@ export interface CheckResult {
   dmarc_record: string | null;
   overall_status: OverallStatus;
   report_sent: 0 | 1;
+  session_token: string | null;
   created_at: number;
 }
 

@@ -1,5 +1,6 @@
 // Free email security check handler.
-// Triggered when an email arrives at check@reports.inboxangel.com.
+// Triggered when an email arrives at check-{token}@reports.inboxangel.io.
+// The token ties the inbound email to a browser session for front-end polling.
 // Parses auth headers, does live DNS lookup, replies with plain-English report, stores result in D1.
 
 import { Env } from '../index';
@@ -37,6 +38,7 @@ function buildMimeReply(from: string, to: string, subject: string, body: string)
 export async function handleFreeCheck(
   message: ForwardableEmailMessage,
   env: Env,
+  sessionToken: string,
 ): Promise<void> {
   const fromEmail = message.from;
   const domain = extractDomain(fromEmail);
@@ -74,6 +76,7 @@ export async function handleFreeCheck(
       dmarc_record: dns.dmarc?.raw ?? null,
       overall_status: summary.status,
       report_sent: 1,
+      session_token: sessionToken,
     });
   } catch (err) {
     console.error('free-check: D1 insert failed', err);

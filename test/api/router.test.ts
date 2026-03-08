@@ -46,7 +46,8 @@ function makeEnv(dbOverrides: Partial<{ prepare: any; batch: any }> = {}): Env {
     CLOUDFLARE_ACCOUNT_ID: '',
     CLOUDFLARE_ZONE_ID: '',
     CLOUDFLARE_API_TOKEN: '',
-    FROM_EMAIL: 'check@reports.inboxangel.com',
+    REPORTS_DOMAIN: 'reports.inboxangel.io',
+    FROM_EMAIL: 'check@reports.inboxangel.io',
   };
 }
 
@@ -89,6 +90,58 @@ describe('unknown routes', () => {
   it('returns 404 for unknown /api/ sub-path', async () => {
     const res = await handleApi(req('GET', '/api/unknown'), makeEnv(), ctx);
     expect(res.status).toBe(404);
+  });
+});
+
+// ── Free check sessions (public, unauthenticated) ─────────────
+
+describe('POST /api/check-sessions', () => {
+  it('returns 201 with token and email', async () => {
+    const res = await handleApi(req('POST', '/api/check-sessions'), makeEnv(), ctx);
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(typeof body.token).toBe('string');
+    expect(body.email).toMatch(/^check-[^@]+@reports\.inboxangel\.io$/);
+  });
+
+  it('generates a unique token each call', async () => {
+    const [a, b] = await Promise.all([
+      handleApi(req('POST', '/api/check-sessions'), makeEnv(), ctx).then(r => r.json()) as any,
+      handleApi(req('POST', '/api/check-sessions'), makeEnv(), ctx).then(r => r.json()) as any,
+    ]);
+    expect((a as any).token).not.toBe((b as any).token);
+  });
+
+  it('does not call requireAuth', async () => {
+    await handleApi(req('POST', '/api/check-sessions'), makeEnv(), ctx);
+    expect(authMod.requireAuth).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/check-sessions/:token', () => {
+  it('returns 202 pending when no result yet', async () => {
+    const res = await handleApi(req('GET', '/api/check-sessions/abc123'), makeEnv(), ctx);
+    expect(res.status).toBe(202);
+    const body = await res.json() as any;
+    expect(body.status).toBe('pending');
+  });
+
+  it('returns 200 done when result exists', async () => {
+    const env = makeEnv();
+    const result = { id: 1, session_token: 'abc123', overall_status: 'protected' };
+    (env.DB.prepare as any).mockReturnValueOnce({
+      bind: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(result) }),
+    });
+    const res = await handleApi(req('GET', '/api/check-sessions/abc123'), env, ctx);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.status).toBe('done');
+    expect(body.result.overall_status).toBe('protected');
+  });
+
+  it('does not call requireAuth', async () => {
+    await handleApi(req('GET', '/api/check-sessions/abc123'), makeEnv(), ctx);
+    expect(authMod.requireAuth).not.toHaveBeenCalled();
   });
 });
 
