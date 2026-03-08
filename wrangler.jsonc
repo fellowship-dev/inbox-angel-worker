@@ -1,0 +1,34 @@
+{
+	"name": "inbox-angel-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-03-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+
+	// D1 database binding
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "inbox-angel",
+			"database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE"
+		}
+	],
+
+	// Email Worker — handles *.reports.inboxangel.com
+	"email": [
+		{
+			"name": "EMAIL"
+		}
+	],
+
+	// Environment variables (secrets set via wrangler secret put)
+	"vars": {
+		"AUTH0_DOMAIN": "",
+		"AUTH0_AUDIENCE": "https://api.inboxangel.com",
+		"CLOUDFLARE_ACCOUNT_ID": "",
+		"CLOUDFLARE_ZONE_ID": "",
+		"FROM_EMAIL": "reports@inboxangel.com"
+	}
+}
