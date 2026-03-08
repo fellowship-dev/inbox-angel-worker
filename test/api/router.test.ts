@@ -99,6 +99,77 @@ describe('unknown routes', () => {
   });
 });
 
+// ── POST+GET /api/bootstrap ───────────────────────────────────
+
+describe('POST /api/bootstrap', () => {
+  it('returns 201 and creates customer + domain on first run', async () => {
+    const env = makeEnv();
+    // getDomainsByCustomer → empty (not yet bootstrapped)
+    (env.DB.prepare as any)
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue({ results: [] }) }) })  // getDomainsByCustomer
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ success: true }) }) }) // upsertCustomer
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ success: true, meta: { last_row_id: 1 } }) }) }) // insertDomain
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ success: true }) }) }); // updateDomainDnsRecord
+    const res = await handleApi(req('POST', '/api/bootstrap', { domain: 'acme.com', name: 'Acme', email: 'admin@acme.com' }), env, ctx);
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(body.bootstrapped).toBe(true);
+    expect(body.domain).toBe('acme.com');
+    expect(body.rua_address).toContain('@reports.inboxangel.io');
+    expect(body.auth_record).toContain('_report._dmarc.');
+  });
+
+  it('returns 200 with existing config when already bootstrapped', async () => {
+    const env = makeEnv();
+    const existing = [{ id: 1, domain: 'acme.com', rua_address: 'org_test-acme-com@reports.inboxangel.io', customer_id: 'org_test' }];
+    (env.DB.prepare as any).mockReturnValueOnce({
+      bind: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue({ results: existing }) }),
+    });
+    const res = await handleApi(req('POST', '/api/bootstrap', { domain: 'acme.com' }), env, ctx);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.bootstrapped).toBe(false);
+    expect(body.domain).toBe('acme.com');
+  });
+
+  it('returns 400 when domain is missing', async () => {
+    const env = makeEnv();
+    (env.DB.prepare as any).mockReturnValueOnce({
+      bind: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue({ results: [] }) }),
+    });
+    const res = await handleApi(req('POST', '/api/bootstrap', {}), env, ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('requires auth', async () => {
+    vi.mocked(authMod.requireAuth).mockRejectedValueOnce(new authMod.AuthError('Missing Authorization'));
+    const res = await handleApi(req('POST', '/api/bootstrap', { domain: 'acme.com' }), makeEnv(), ctx);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/bootstrap', () => {
+  it('returns bootstrapped: false when no domains exist', async () => {
+    const res = await handleApi(req('GET', '/api/bootstrap'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.bootstrapped).toBe(false);
+  });
+
+  it('returns bootstrapped: true with domain info when configured', async () => {
+    const env = makeEnv();
+    const existing = [{ id: 1, domain: 'acme.com', rua_address: 'org_test-acme-com@reports.inboxangel.io' }];
+    (env.DB.prepare as any).mockReturnValueOnce({
+      bind: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue({ results: existing }) }),
+    });
+    const res = await handleApi(req('GET', '/api/bootstrap'), env, ctx);
+    const body = await res.json() as any;
+    expect(body.bootstrapped).toBe(true);
+    expect(body.domain).toBe('acme.com');
+    expect(body.rua_address).toContain('@reports.inboxangel.io');
+  });
+});
+
 // ── Free check sessions (public, unauthenticated) ─────────────
 
 describe('POST /api/check-sessions', () => {

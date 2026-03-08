@@ -9,6 +9,11 @@
 	//         wrangler secret put API_KEY               (your chosen auth key)
 	// 6. In CF dashboard: Email Routing → catch-all → Send to Worker
 	// 7. wrangler d1 migrations apply <your-db-name> --remote && wrangler deploy
+	// 8. Bootstrap your account (once):
+	//    curl -X POST https://<worker>/api/bootstrap \
+	//      -H "X-Api-Key: <API_KEY>" -H "Content-Type: application/json" \
+	//      -d '{"domain":"yourdomain.com","name":"Me","email":"you@yourdomain.com"}'
+	//    After bootstrap, POST returns existing config — safe to re-run.
 	// ───────────────────────────────────────────────────────────────────────────
 
 	"name": "inbox-angel-worker",

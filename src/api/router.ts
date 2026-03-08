@@ -6,6 +6,8 @@
 //   GET  /health                          — liveness probe (unauthenticated)
 //   POST /api/check-sessions              — create a free-check session (unauthenticated)
 //   GET  /api/check-sessions/:token       — poll for free-check result (unauthenticated)
+//   POST /api/bootstrap                   — first-time customer + domain setup (API_KEY required)
+//   GET  /api/bootstrap                   — check bootstrap state (API_KEY required)
 //   GET  /api/domains                     — list customer's monitored domains
 //   POST /api/domains                     — add a domain
 //   DELETE /api/domains/:id               — remove a domain
@@ -24,6 +26,7 @@ import {
   getRecentReports,
   getCheckResultByToken,
   insertMonitorSubscription,
+  upsertCustomer,
 } from '../db/queries';
 import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
 
@@ -151,6 +154,49 @@ async function getReport(env: Env, customerId: string, reportId: string): Promis
   return json({ report, records });
 }
 
+async function bootstrap(request: Request, env: Env, customerId: string): Promise<Response> {
+  if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
+
+  // Check if already bootstrapped — return existing config
+  const { results: existing } = await getDomainsByCustomer(env.DB, customerId);
+  if (existing.length > 0) {
+    const d = existing[0];
+    return json({ bootstrapped: false, customer_id: customerId, domain: d.domain, rua_address: d.rua_address });
+  }
+
+  // First run — create customer + domain
+  const body = await parseBody<{ domain?: string; name?: string; email?: string }>(request);
+  if (!body.domain || typeof body.domain !== 'string') return err('domain is required', 400);
+
+  const domain = body.domain.toLowerCase().trim();
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return err('invalid domain format', 400);
+
+  await upsertCustomer(env.DB, {
+    id: customerId,
+    name: body.name?.trim() || 'Self-hosted',
+    email: body.email?.trim() || env.FROM_EMAIL,
+    plan: 'self-hosted',
+  });
+
+  const slug = domain.replace(/\./g, '-');
+  const ruaAddress = `${customerId}-${slug}@${env.REPORTS_DOMAIN}`;
+
+  // Provision DNS authorization record
+  let authRecord: string | null = null;
+  try {
+    const provision = await provisionDomain(env, domain);
+    authRecord = provision.recordName;
+
+    const result = await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
+    await updateDomainDnsRecord(env.DB, result.meta.last_row_id as number, provision.recordId).catch(() => {});
+  } catch (e) {
+    if (e instanceof DnsProvisionError) return err('DNS provisioning failed — check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID', 502);
+    throw e;
+  }
+
+  return json({ bootstrapped: true, customer_id: customerId, domain, rua_address: ruaAddress, auth_record: authRecord }, 201);
+}
+
 async function getCheckResults(env: Env, customerId: string): Promise<Response> {
   // Check results are anonymous — only expose if the customer matches their own domain
   // For now: return the last 20 results for domains owned by this customer
@@ -237,6 +283,17 @@ export async function handleApi(
   }
 
   try {
+    // POST /api/bootstrap — first-time customer + domain setup (idempotent)
+    if (path === '/api/bootstrap' && method === 'POST') {
+      return await bootstrap(request, env, customerId);
+    }
+    // GET /api/bootstrap — check current bootstrap state
+    if (path === '/api/bootstrap' && method === 'GET') {
+      const { results } = await getDomainsByCustomer(env.DB, customerId);
+      if (results.length === 0) return json({ bootstrapped: false });
+      const d = results[0];
+      return json({ bootstrapped: true, customer_id: customerId, domain: d.domain, rua_address: d.rua_address });
+    }
     // GET /api/domains
     if (path === '/api/domains' && method === 'GET') {
       return await getDomains(env, customerId);
