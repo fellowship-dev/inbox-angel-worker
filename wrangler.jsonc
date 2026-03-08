@@ -39,9 +39,11 @@
 		}
 	],
 
-	// Cron — daily DNS re-check for all monitor subscriptions
+	// Crons:
+	//   0 8 * * *  — daily DNS monitor check
+	//   0 9 * * 1  — weekly DMARC digest email (Mondays 9am UTC)
 	"triggers": {
-		"crons": ["0 8 * * *"]
+		"crons": ["0 8 * * *", "0 9 * * 1"]
 	},
 
 	// Environment variables — secrets go via: wrangler secret put <NAME>

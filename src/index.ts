@@ -3,6 +3,7 @@ import { handleApi } from './api/router';
 import { getActiveSubscriptions, updateSubscriptionBaseline } from './db/queries';
 import { checkSubscription } from './monitor/check';
 import { sendChangeNotification } from './monitor/notify';
+import { sendWeeklyDigests } from './digest/weekly';
 
 export interface Env {
   DB: D1Database;
@@ -34,8 +35,15 @@ export default {
     await handleEmail(message, env, ctx);
   },
 
-  // Daily cron — re-check DNS for all active monitor subscriptions
-  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+  // Cron dispatcher — routes by schedule expression
+  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    // Weekly digest — every Monday 9am UTC
+    if (event.cron === '0 9 * * 1') {
+      await sendWeeklyDigests(env);
+      return;
+    }
+
+    // Daily monitor check — every day 8am UTC (default / catch-all)
     const { results: subscriptions } = await getActiveSubscriptions(env.DB, 200);
     console.log(`[monitor] checking ${subscriptions.length} subscriptions`);
 

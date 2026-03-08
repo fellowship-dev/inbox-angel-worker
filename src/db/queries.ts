@@ -6,6 +6,10 @@ export function getCustomer(db: D1Database, id: string) {
   return db.prepare('SELECT * FROM customers WHERE id = ?').bind(id).first<Customer>();
 }
 
+export function getAllCustomers(db: D1Database) {
+  return db.prepare('SELECT * FROM customers ORDER BY created_at').all<Customer>();
+}
+
 export function upsertCustomer(db: D1Database, c: Pick<Customer, 'id' | 'name' | 'email' | 'plan'>) {
   return db.prepare(`
     INSERT INTO customers (id, name, email, plan)
@@ -118,6 +122,55 @@ export function updateSubscriptionBaseline(
     SET spf_record = ?, dmarc_policy = ?, dmarc_pct = ?, dmarc_record = ?, last_checked_at = unixepoch()
     WHERE id = ?
   `).bind(baseline.spf_record ?? null, baseline.dmarc_policy ?? null, baseline.dmarc_pct ?? null, baseline.dmarc_record ?? null, id).run();
+}
+
+// ── Weekly Digest ─────────────────────────────────────────────
+
+export interface DomainWeeklyStat {
+  domain_id: number;
+  domain: string;
+  dmarc_policy: string | null;
+  total_messages: number;
+  pass_messages: number;
+  fail_messages: number;
+  report_count: number;
+}
+
+export interface FailingSource {
+  source_ip: string;
+  total: number;
+  header_from: string | null;
+}
+
+export function getWeeklyDomainStats(db: D1Database, customerId: string, since: number) {
+  return db.prepare(`
+    SELECT
+      d.id AS domain_id,
+      d.domain,
+      d.dmarc_policy,
+      COALESCE(SUM(r.total_count), 0) AS total_messages,
+      COALESCE(SUM(r.pass_count),  0) AS pass_messages,
+      COALESCE(SUM(r.fail_count),  0) AS fail_messages,
+      COUNT(r.id) AS report_count
+    FROM domains d
+    LEFT JOIN aggregate_reports r ON r.domain_id = d.id AND r.date_begin >= ?
+    WHERE d.customer_id = ?
+    GROUP BY d.id, d.domain, d.dmarc_policy
+    ORDER BY d.domain
+  `).bind(since, customerId).all<DomainWeeklyStat>();
+}
+
+export function getTopFailingSources(db: D1Database, domainId: number, since: number, limit = 5) {
+  return db.prepare(`
+    SELECT rr.source_ip, SUM(rr.count) AS total, rr.header_from
+    FROM report_records rr
+    JOIN aggregate_reports ar ON ar.id = rr.report_id
+    WHERE ar.domain_id = ? AND ar.date_begin >= ?
+      AND (rr.dkim_result = 'fail' OR rr.spf_result = 'fail')
+    GROUP BY rr.source_ip
+    ORDER BY total DESC
+    LIMIT ?
+  `).bind(domainId, since, limit).all<FailingSource>();
 }
 
 // ── Report Records ───────────────────────────────────────────
