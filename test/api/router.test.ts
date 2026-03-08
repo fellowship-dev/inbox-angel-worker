@@ -244,10 +244,11 @@ describe('POST /api/domains', () => {
     expect(res.status).toBe(409);
   });
 
-  it('derives rua_address from customerId + domain slug', async () => {
+  it('uses fixed rua address rua@REPORTS_DOMAIN', async () => {
     const res = await handleApi(req('POST', '/api/domains', { domain: 'my-company.io' }), makeEnv(), ctx);
     const body = await res.json() as any;
-    expect(body.rua_address).toBe('org_test-my-company-io@reports.inboxangel.io');
+    expect(body.rua_address).toBe('rua@reports.inboxangel.io');
+    expect(body.rua_hint).toContain('rua=mailto:rua@reports.inboxangel.io');
   });
 
   it('returns 502 when DNS provisioning fails', async () => {
@@ -274,7 +275,7 @@ describe('POST /api/domains', () => {
     expect(res.status).toBe(201);
     const body = await res.json() as any;
     expect(body.manual_dns).toBe(true);
-    expect(body.instructions).toContain('v=DMARC1;');
+    expect(body.dns_instructions).toContain('v=DMARC1;');
   });
 });
 

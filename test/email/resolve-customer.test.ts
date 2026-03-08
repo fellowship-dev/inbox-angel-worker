@@ -17,7 +17,7 @@ const DOMAIN: Domain = {
   id: 1,
   customer_id: 'org_abc123',
   domain: 'acme.com',
-  rua_address: 'org_abc123@reports.inboxangel.com',
+  rua_address: 'rua@reports.inboxangel.io',
   dmarc_policy: 'quarantine',
   dmarc_pct: 100,
   spf_record: 'v=spf1 -all',
@@ -33,7 +33,7 @@ function makeDb(domain: Domain | null, customer: Customer | null): D1Database {
     prepare: vi.fn().mockImplementation((sql: string) => ({
       bind: vi.fn().mockReturnValue({
         first: vi.fn().mockResolvedValue(
-          sql.includes('rua_address') ? domain : customer
+          sql.includes('domains') ? domain : customer
         ),
       }),
     })),
@@ -43,53 +43,49 @@ function makeDb(domain: Domain | null, customer: Customer | null): D1Database {
 // ── Tests ─────────────────────────────────────────────────────
 
 describe('resolveCustomer', () => {
-  it('returns customer and domain for a known rua_address', async () => {
+  it('returns customer and domain for a known policy domain', async () => {
     const db = makeDb(DOMAIN, CUSTOMER);
-    const result = await resolveCustomer(db, 'org_abc123@reports.inboxangel.com');
+    const result = await resolveCustomer(db, 'acme.com');
 
     expect(result).not.toBeNull();
     expect(result!.customer.id).toBe('org_abc123');
     expect(result!.customer.name).toBe('Acme Corp');
     expect(result!.domain.domain).toBe('acme.com');
-    expect(result!.domain.rua_address).toBe('org_abc123@reports.inboxangel.com');
   });
 
-  it('returns null when address is not in domains table', async () => {
+  it('returns null when domain is not in domains table', async () => {
     const db = makeDb(null, CUSTOMER);
-    const result = await resolveCustomer(db, 'unknown@reports.inboxangel.com');
+    const result = await resolveCustomer(db, 'unknown.com');
     expect(result).toBeNull();
   });
 
   it('returns null when domain exists but customer row is missing (orphaned domain)', async () => {
     const db = makeDb(DOMAIN, null);
-    const result = await resolveCustomer(db, 'org_abc123@reports.inboxangel.com');
+    const result = await resolveCustomer(db, 'acme.com');
     expect(result).toBeNull();
   });
 
-  it('normalises the address to lowercase before lookup', async () => {
+  it('normalises the policy domain to lowercase before lookup', async () => {
     const db = makeDb(DOMAIN, CUSTOMER);
-    // Address arrives mixed-case from SMTP
-    const result = await resolveCustomer(db, 'ORG_ABC123@Reports.InboxAngel.COM');
+    const result = await resolveCustomer(db, 'ACME.COM');
 
     expect(result).not.toBeNull();
-    // Verify the DB was called with the lowercased address
     const prepareMock = db.prepare as ReturnType<typeof vi.fn>;
     const domainQuery = prepareMock.mock.calls.find(([sql]: [string]) =>
-      sql.includes('rua_address')
+      sql.includes('domains')
     );
     expect(domainQuery).toBeDefined();
     const bindArg = prepareMock.mock.results[
       prepareMock.mock.calls.indexOf(domainQuery)
     ].value.bind.mock.calls[0][0];
-    expect(bindArg).toBe('org_abc123@reports.inboxangel.com');
+    expect(bindArg).toBe('acme.com');
   });
 
   it('uses domain.customer_id to fetch the customer', async () => {
     const db = makeDb(DOMAIN, CUSTOMER);
-    await resolveCustomer(db, 'org_abc123@reports.inboxangel.com');
+    await resolveCustomer(db, 'acme.com');
 
     const prepareMock = db.prepare as ReturnType<typeof vi.fn>;
-    // Second prepare call should be the customer query
     const customerQuery = prepareMock.mock.calls.find(([sql]: [string]) =>
       sql.includes('customers')
     );
@@ -102,27 +98,20 @@ describe('resolveCustomer', () => {
 
   it('preserves all customer fields in the result', async () => {
     const db = makeDb(DOMAIN, CUSTOMER);
-    const result = await resolveCustomer(db, 'org_abc123@reports.inboxangel.com');
-
+    const result = await resolveCustomer(db, 'acme.com');
     expect(result!.customer).toEqual(CUSTOMER);
   });
 
   it('preserves all domain fields in the result', async () => {
     const db = makeDb(DOMAIN, CUSTOMER);
-    const result = await resolveCustomer(db, 'org_abc123@reports.inboxangel.com');
-
+    const result = await resolveCustomer(db, 'acme.com');
     expect(result!.domain).toEqual(DOMAIN);
   });
 
   it('handles a second domain on the same customer', async () => {
-    const domain2: Domain = {
-      ...DOMAIN,
-      id: 2,
-      domain: 'acme.io',
-      rua_address: 'org_abc123_2@reports.inboxangel.com',
-    };
+    const domain2: Domain = { ...DOMAIN, id: 2, domain: 'acme.io', rua_address: 'rua@reports.inboxangel.io' };
     const db = makeDb(domain2, CUSTOMER);
-    const result = await resolveCustomer(db, 'org_abc123_2@reports.inboxangel.com');
+    const result = await resolveCustomer(db, 'acme.io');
 
     expect(result!.domain.domain).toBe('acme.io');
     expect(result!.customer.id).toBe('org_abc123');

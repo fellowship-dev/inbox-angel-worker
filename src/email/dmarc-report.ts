@@ -1,6 +1,9 @@
 // Handles inbound DMARC aggregate report emails.
-// Triggered for any address other than check@reports.inboxangel.com.
-// Flow: extract bytes → resolve customer → parse XML → store in D1.
+// Triggered for any address other than check-*@reports.yourdomain.com.
+// Flow: extract bytes → parse XML → resolve customer by policy_domain → store in D1.
+//
+// Routing is by report content (policy_published.domain), not by the recipient address.
+// This lets self-hosters use a fixed rua=mailto:rua@reports.yourdomain.com for all domains.
 
 import { Env } from '../index';
 import { extractAttachmentBytes, MimeExtractError } from './mime-extract';
@@ -11,7 +14,6 @@ import { storeReport } from '../dmarc/store-report';
 export async function handleDmarcReport(
   message: ForwardableEmailMessage,
   env: Env,
-  _localPart: string,
 ): Promise<void> {
   // 1. Extract attachment bytes from raw MIME stream
   let bytes: Uint8Array;
@@ -26,16 +28,7 @@ export async function handleDmarcReport(
     return;
   }
 
-  // 2. Resolve customer + domain from the recipient address
-  const resolved = await resolveCustomer(env.DB, message.to);
-  if (!resolved) {
-    console.warn('dmarc-report: unknown recipient address', message.to);
-    message.setReject('Unknown recipient address — not a registered InboxAngel inbox');
-    return;
-  }
-  const { customer, domain } = resolved;
-
-  // 3. Parse the DMARC XML
+  // 2. Parse the DMARC XML — needed to determine which domain this report is for
   let report;
   let rawXml: string | null = null;
   try {
@@ -54,10 +47,20 @@ export async function handleDmarcReport(
     const reason = err instanceof ParseEmailError
       ? `Invalid DMARC report: ${err.message}`
       : 'Unexpected error parsing DMARC report';
-    console.error('dmarc-report: parse failed for', domain.domain, err);
+    console.error('dmarc-report: parse failed', err);
     message.setReject(reason);
     return;
   }
+
+  // 3. Resolve customer + domain from the policy_domain in the report
+  const policyDomain = report.policy_published.domain;
+  const resolved = await resolveCustomer(env.DB, policyDomain);
+  if (!resolved) {
+    console.warn('dmarc-report: no customer found for policy_domain', policyDomain);
+    message.setReject(`Unknown domain ${policyDomain} — not a registered InboxAngel inbox`);
+    return;
+  }
+  const { customer, domain } = resolved;
 
   // 4. Store in D1 (dedup handled by INSERT OR IGNORE inside storeReport)
   try {

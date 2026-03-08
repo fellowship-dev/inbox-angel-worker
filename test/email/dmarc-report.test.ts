@@ -51,7 +51,7 @@ const DOMAIN: Domain = {
   id: 1,
   customer_id: 'org_abc123',
   domain: 'acme.com',
-  rua_address: 'org_abc123@reports.inboxangel.com',
+  rua_address: 'rua@reports.inboxangel.io',
   dmarc_policy: 'reject',
   dmarc_pct: 100,
   spf_record: null,
@@ -105,10 +105,8 @@ function makeEnv(): Env {
     DB: {} as D1Database,
     AUTH0_DOMAIN: '',
     AUTH0_AUDIENCE: '',
-    CLOUDFLARE_ACCOUNT_ID: '',
-    CLOUDFLARE_ZONE_ID: '',
-    CLOUDFLARE_API_TOKEN: '',
-    FROM_EMAIL: 'check@reports.inboxangel.com',
+    FROM_EMAIL: 'check@reports.inboxangel.io',
+    REPORTS_DOMAIN: 'reports.inboxangel.io',
   };
 }
 
@@ -130,34 +128,30 @@ describe('handleDmarcReport — happy path', () => {
   it('calls extractAttachmentBytes with message.raw', async () => {
     const raw = makeStream();
     const message = makeMessage({ raw });
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(mimeExtract.extractAttachmentBytes).toHaveBeenCalledWith(raw);
   });
 
-  it('calls resolveCustomer with env.DB and message.to', async () => {
-    const message = makeMessage({ to: 'org_abc123@reports.inboxangel.com' });
+  it('calls resolveCustomer with env.DB and the policy_domain from the report', async () => {
     const env = makeEnv();
-    await handleDmarcReport(message, env, 'org_abc123');
+    await handleDmarcReport(makeMessage(), env);
 
-    expect(resolveCustomerMod.resolveCustomer).toHaveBeenCalledWith(
-      env.DB,
-      'org_abc123@reports.inboxangel.com',
-    );
+    expect(resolveCustomerMod.resolveCustomer).toHaveBeenCalledWith(env.DB, 'acme.com');
   });
 
   it('calls parseDmarcEmail with the extracted bytes', async () => {
     const fakeBytes = new Uint8Array([1, 2, 3]);
     vi.mocked(mimeExtract.extractAttachmentBytes).mockResolvedValue(fakeBytes);
 
-    await handleDmarcReport(makeMessage(), makeEnv(), 'org_abc123');
+    await handleDmarcReport(makeMessage(), makeEnv());
 
     expect(parseEmailMod.parseDmarcEmail).toHaveBeenCalledWith(fakeBytes);
   });
 
   it('calls storeReport with correct customer + domain ids', async () => {
     const env = makeEnv();
-    await handleDmarcReport(makeMessage(), env, 'org_abc123');
+    await handleDmarcReport(makeMessage(), env);
 
     const [calledDb, calledCustomerId, calledDomainId, calledReport] =
       vi.mocked(storeReportMod.storeReport).mock.calls[0];
@@ -169,18 +163,17 @@ describe('handleDmarcReport — happy path', () => {
 
   it('does not call setReject on success', async () => {
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).not.toHaveBeenCalled();
   });
 
   it('stores rawXml=null for binary (gz) attachments', async () => {
-    // gz magic bytes — not valid UTF-8 XML
     vi.mocked(mimeExtract.extractAttachmentBytes).mockResolvedValue(
       new Uint8Array([0x1f, 0x8b, 0x08])
     );
     const env = makeEnv();
-    await handleDmarcReport(makeMessage(), env, 'org_abc123');
+    await handleDmarcReport(makeMessage(), env);
 
     const [, , , , rawXml] = vi.mocked(storeReportMod.storeReport).mock.calls[0];
     expect(rawXml).toBeNull();
@@ -192,7 +185,7 @@ describe('handleDmarcReport — happy path', () => {
       new TextEncoder().encode(xml)
     );
     const env = makeEnv();
-    await handleDmarcReport(makeMessage(), env, 'org_abc123');
+    await handleDmarcReport(makeMessage(), env);
 
     const [, , , , rawXml] = vi.mocked(storeReportMod.storeReport).mock.calls[0];
     expect(rawXml).toBe(xml);
@@ -201,7 +194,7 @@ describe('handleDmarcReport — happy path', () => {
   it('does not throw when storeReport returns stored=false (duplicate)', async () => {
     vi.mocked(storeReportMod.storeReport).mockResolvedValue({ stored: false });
     const message = makeMessage();
-    await expect(handleDmarcReport(message, makeEnv(), 'org_abc123')).resolves.toBeUndefined();
+    await expect(handleDmarcReport(message, makeEnv())).resolves.toBeUndefined();
     expect(message.setReject).not.toHaveBeenCalled();
   });
 });
@@ -214,7 +207,7 @@ describe('handleDmarcReport — error paths', () => {
       new mimeExtract.MimeExtractError('No DMARC attachment found')
     );
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).toHaveBeenCalledOnce();
     expect((message.setReject as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
@@ -225,7 +218,7 @@ describe('handleDmarcReport — error paths', () => {
   it('calls setReject for unexpected MIME extraction error', async () => {
     vi.mocked(mimeExtract.extractAttachmentBytes).mockRejectedValue(new Error('network timeout'));
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).toHaveBeenCalledOnce();
     expect((message.setReject as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
@@ -233,22 +226,22 @@ describe('handleDmarcReport — error paths', () => {
     );
   });
 
-  it('calls setReject when recipient address is unknown', async () => {
+  it('calls setReject when policy_domain is not registered', async () => {
     vi.mocked(resolveCustomerMod.resolveCustomer).mockResolvedValue(null);
-    const message = makeMessage({ to: 'unknown@reports.inboxangel.com' });
-    await handleDmarcReport(message, makeEnv(), 'unknown');
+    const message = makeMessage();
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).toHaveBeenCalledOnce();
     expect((message.setReject as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
-      'Unknown recipient'
+      'Unknown domain'
     );
   });
 
-  it('does not call parseDmarcEmail or storeReport when customer is unknown', async () => {
+  it('calls parseDmarcEmail but not storeReport when policy_domain is unknown', async () => {
     vi.mocked(resolveCustomerMod.resolveCustomer).mockResolvedValue(null);
-    await handleDmarcReport(makeMessage(), makeEnv(), 'unknown');
+    await handleDmarcReport(makeMessage(), makeEnv());
 
-    expect(parseEmailMod.parseDmarcEmail).not.toHaveBeenCalled();
+    expect(parseEmailMod.parseDmarcEmail).toHaveBeenCalled();
     expect(storeReportMod.storeReport).not.toHaveBeenCalled();
   });
 
@@ -257,7 +250,7 @@ describe('handleDmarcReport — error paths', () => {
       new parseEmailMod.ParseEmailError('Invalid DMARC report XML')
     );
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).toHaveBeenCalledOnce();
     expect((message.setReject as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
@@ -268,7 +261,7 @@ describe('handleDmarcReport — error paths', () => {
   it('calls setReject for unexpected parse error', async () => {
     vi.mocked(parseEmailMod.parseDmarcEmail).mockRejectedValue(new Error('out of memory'));
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).toHaveBeenCalledOnce();
     expect((message.setReject as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
@@ -279,7 +272,7 @@ describe('handleDmarcReport — error paths', () => {
   it('does not call setReject when storeReport throws (storage failure is non-fatal)', async () => {
     vi.mocked(storeReportMod.storeReport).mockRejectedValue(new Error('D1 unavailable'));
     const message = makeMessage();
-    await handleDmarcReport(message, makeEnv(), 'org_abc123');
+    await handleDmarcReport(message, makeEnv());
 
     expect(message.setReject).not.toHaveBeenCalled();
   });
@@ -287,7 +280,7 @@ describe('handleDmarcReport — error paths', () => {
   it('resolves without throwing when storeReport fails', async () => {
     vi.mocked(storeReportMod.storeReport).mockRejectedValue(new Error('D1 unavailable'));
     await expect(
-      handleDmarcReport(makeMessage(), makeEnv(), 'org_abc123')
+      handleDmarcReport(makeMessage(), makeEnv())
     ).resolves.toBeUndefined();
   });
 });

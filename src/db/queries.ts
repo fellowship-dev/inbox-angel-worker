@@ -21,8 +21,8 @@ export function getDomainsByCustomer(db: D1Database, customerId: string) {
     .bind(customerId).all<Domain>();
 }
 
-export function getDomainByAddress(db: D1Database, ruaAddress: string) {
-  return db.prepare('SELECT * FROM domains WHERE rua_address = ?').bind(ruaAddress).first<Domain>();
+export function getDomainByName(db: D1Database, domain: string) {
+  return db.prepare('SELECT * FROM domains WHERE domain = ?').bind(domain).first<Domain>();
 }
 
 export function getDomainById(db: D1Database, id: number) {

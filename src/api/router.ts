@@ -71,10 +71,9 @@ async function addDomain(request: Request, env: Env, customerId: string): Promis
     return err('invalid domain format', 400);
   }
 
-  // RUA address derived from customer ID + domain slug (unique per domain)
   if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
-  const slug = domain.replace(/\./g, '-');
-  const ruaAddress = `${customerId}-${slug}@${env.REPORTS_DOMAIN}`;
+  // Fixed rua address — routing is by XML policy_domain, not by address encoding
+  const ruaAddress = `rua@${env.REPORTS_DOMAIN}`;
 
   // Provision the cross-domain DMARC authorization record.
   // If CF creds are absent, returns manual mode — caller gets instructions instead of auto-record.
@@ -109,10 +108,15 @@ async function addDomain(request: Request, env: Env, customerId: string): Promis
     );
   }
 
-  const response: Record<string, unknown> = { domain, rua_address: ruaAddress, auth_record: provision.recordName };
+  const response: Record<string, unknown> = {
+    domain,
+    rua_address: ruaAddress,
+    rua_hint: `Add rua=mailto:${ruaAddress} to your DMARC record`,
+    auth_record: provision.recordName,
+  };
   if (provision.manual) {
     response.manual_dns = true;
-    response.instructions = `Add this TXT record to authorize DMARC reports:\n  ${provision.recordName}  TXT  "v=DMARC1;"`;
+    response.dns_instructions = `Add this TXT record to authorize DMARC reports:\n  ${provision.recordName}  TXT  "v=DMARC1;"`;
   }
   return json(response, 201);
 }
@@ -191,8 +195,7 @@ async function ensureCustomerExists(env: Env, customerId: string): Promise<void>
     plan: 'self-hosted',
   });
 
-  const slug = domain.replace(/\./g, '-');
-  const ruaAddress = `${customerId}-${slug}@${env.REPORTS_DOMAIN}`;
+  const ruaAddress = `rua@${env.REPORTS_DOMAIN}`;
   const provision = await provisionDomain(env, domain);
   const result = await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
 

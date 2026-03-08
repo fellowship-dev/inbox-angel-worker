@@ -2,9 +2,9 @@ import { Env } from '../index';
 import { handleFreeCheck } from './free-check';
 import { handleDmarcReport } from './dmarc-report';
 
-// Routes inbound email by recipient address:
-//   check-{token}@reports.inboxangel.io  → free SPF/DKIM/DMARC check (session-based)
-//   {customerId}-{slug}@reports.inboxangel.io → DMARC RUA aggregate report
+// Routes inbound email by recipient address local part:
+//   check-{token}@reports.yourdomain.com  → free SPF/DKIM/DMARC check (session-based)
+//   anything else                         → DMARC RUA aggregate report (routed by XML content)
 export async function handleEmail(
   message: ForwardableEmailMessage,
   env: Env,
@@ -18,7 +18,7 @@ export async function handleEmail(
     const token = localPart.slice(checkPrefix.length);
     await handleFreeCheck(message, env, token);
   } else {
-    // Any other address is treated as a customer RUA inbox
-    await handleDmarcReport(message, env, localPart);
+    // RUA report — customer is resolved from the policy_domain in the XML
+    await handleDmarcReport(message, env);
   }
 }
