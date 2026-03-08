@@ -361,6 +361,53 @@ describe('GET /api/reports/:id', () => {
   });
 });
 
+// ── POST /api/monitor ─────────────────────────────────────────
+
+describe('POST /api/monitor', () => {
+  const checkResult = { id: 1, from_domain: 'acme.com', spf_record: 'v=spf1 -all', dmarc_policy: 'none', dmarc_record: 'v=DMARC1; p=none', session_token: 'tok123' };
+
+  it('returns 201 with domain and email when session exists', async () => {
+    const env = makeEnv();
+    (env.DB.prepare as any)
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(checkResult) }) }) // getCheckResultByToken
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ success: true }) }) }); // insertMonitorSubscription
+    const res = await handleApi(req('POST', '/api/monitor', { email: 'user@example.com', session_token: 'tok123' }), env, ctx);
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(body.domain).toBe('acme.com');
+    expect(body.email).toBe('user@example.com');
+  });
+
+  it('returns 400 when email is missing', async () => {
+    const res = await handleApi(req('POST', '/api/monitor', { session_token: 'tok123' }), makeEnv(), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when session_token is missing', async () => {
+    const res = await handleApi(req('POST', '/api/monitor', { email: 'user@example.com' }), makeEnv(), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for invalid email format', async () => {
+    const res = await handleApi(req('POST', '/api/monitor', { email: 'notanemail', session_token: 'tok' }), makeEnv(), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when session token has no check result', async () => {
+    const res = await handleApi(req('POST', '/api/monitor', { email: 'user@example.com', session_token: 'unknown' }), makeEnv(), ctx);
+    expect(res.status).toBe(404);
+  });
+
+  it('does not require auth', async () => {
+    const env = makeEnv();
+    (env.DB.prepare as any)
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(checkResult) }) })
+      .mockReturnValueOnce({ bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ success: true }) }) });
+    await handleApi(req('POST', '/api/monitor', { email: 'u@x.com', session_token: 'tok123' }), env, ctx);
+    expect(authMod.requireAuth).not.toHaveBeenCalled();
+  });
+});
+
 // ── GET /api/check-results ────────────────────────────────────
 
 describe('GET /api/check-results', () => {

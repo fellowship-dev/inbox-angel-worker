@@ -22,6 +22,7 @@ import {
   updateDomainDnsRecord,
   getRecentReports,
   getCheckResultByToken,
+  insertMonitorSubscription,
 } from '../db/queries';
 import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
 
@@ -196,6 +197,28 @@ export async function handleApi(
     const result = await getCheckResultByToken(env.DB, sessionMatch[1]);
     if (!result) return json({ status: 'pending' }, 202);
     return json({ status: 'done', result });
+  }
+
+  // POST /api/monitor — subscribe to change alerts for a domain (unauthenticated)
+  if (path === '/api/monitor' && method === 'POST') {
+    const body = await parseBody<{ email?: string; session_token?: string }>(request);
+    if (!body.email || !body.session_token) return err('email and session_token are required', 400);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) return err('invalid email', 400);
+
+    const checkResult = await getCheckResultByToken(env.DB, body.session_token);
+    if (!checkResult) return err('check result not found — send the test email first', 404);
+
+    await insertMonitorSubscription(env.DB, {
+      email: body.email.toLowerCase().trim(),
+      domain: checkResult.from_domain,
+      session_token: body.session_token,
+      spf_record: checkResult.spf_record,
+      dmarc_policy: checkResult.dmarc_policy,
+      dmarc_pct: null,  // not stored in check_results; will be populated on first cron run
+      dmarc_record: checkResult.dmarc_record,
+    });
+
+    return json({ domain: checkResult.from_domain, email: body.email }, 201);
   }
 
   // All /api/* routes require auth

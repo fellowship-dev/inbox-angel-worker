@@ -36,6 +36,11 @@
 		}
 	],
 
+	// Cron — daily DNS re-check for all monitor subscriptions
+	"triggers": {
+		"crons": ["0 8 * * *"]
+	},
+
 	// Environment variables — secrets go via: wrangler secret put <NAME>
 	"vars": {
 		"AUTH0_DOMAIN": "",           // empty = bypass mode, use API_KEY header instead
@@ -44,6 +49,7 @@
 		"CLOUDFLARE_ZONE_ID": "",     // zone ID of the domain receiving reports
 		"REPORTS_DOMAIN": "",         // REQUIRED: e.g. "reports.yourdomain.com"
 		"CHECK_PREFIX": "check-",     // prefix for free-check addresses (optional)
-		"FROM_EMAIL": ""              // REQUIRED: reply-from for free-check emails
+		"FROM_EMAIL": "",             // REQUIRED: reply-from for free-check emails
+		"RESEND_API_KEY": ""          // optional: transactional email for monitor alerts
 	}
 }

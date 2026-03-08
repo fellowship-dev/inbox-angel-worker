@@ -65,6 +65,20 @@ export interface AggregateReport {
   created_at: number;
 }
 
+export interface MonitorSubscription {
+  id: number;
+  email: string;
+  domain: string;
+  session_token: string | null;
+  spf_record: string | null;
+  dmarc_policy: string | null;
+  dmarc_pct: number | null;
+  dmarc_record: string | null;
+  active: 0 | 1;
+  last_checked_at: number | null;
+  created_at: number;
+}
+
 export interface ReportRecord {
   id: number;
   report_id: number;

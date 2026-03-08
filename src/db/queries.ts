@@ -1,4 +1,4 @@
-import { AggregateReport, CheckResult, Customer, Domain, ReportRecord } from './types';
+import { AggregateReport, CheckResult, Customer, Domain, MonitorSubscription, ReportRecord } from './types';
 
 // ── Customers ────────────────────────────────────────────────
 
@@ -84,6 +84,40 @@ export function getRecentReports(db: D1Database, customerId: string, limit = 30)
     WHERE r.customer_id = ?
     ORDER BY r.date_begin DESC LIMIT ?
   `).bind(customerId, limit).all<AggregateReport & { domain: string }>();
+}
+
+// ── Monitor Subscriptions ─────────────────────────────────────
+
+export function insertMonitorSubscription(
+  db: D1Database,
+  s: Pick<MonitorSubscription, 'email' | 'domain' | 'session_token' | 'spf_record' | 'dmarc_policy' | 'dmarc_pct' | 'dmarc_record'>
+) {
+  return db.prepare(`
+    INSERT INTO monitor_subscriptions (email, domain, session_token, spf_record, dmarc_policy, dmarc_pct, dmarc_record)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(email, domain) DO NOTHING
+  `).bind(s.email, s.domain, s.session_token ?? null, s.spf_record ?? null, s.dmarc_policy ?? null, s.dmarc_pct ?? null, s.dmarc_record ?? null).run();
+}
+
+export function getActiveSubscriptions(db: D1Database, limit = 100) {
+  return db.prepare(`
+    SELECT * FROM monitor_subscriptions
+    WHERE active = 1
+    ORDER BY last_checked_at ASC NULLS FIRST
+    LIMIT ?
+  `).bind(limit).all<MonitorSubscription>();
+}
+
+export function updateSubscriptionBaseline(
+  db: D1Database,
+  id: number,
+  baseline: Pick<MonitorSubscription, 'spf_record' | 'dmarc_policy' | 'dmarc_pct' | 'dmarc_record'>
+) {
+  return db.prepare(`
+    UPDATE monitor_subscriptions
+    SET spf_record = ?, dmarc_policy = ?, dmarc_pct = ?, dmarc_record = ?, last_checked_at = unixepoch()
+    WHERE id = ?
+  `).bind(baseline.spf_record ?? null, baseline.dmarc_policy ?? null, baseline.dmarc_pct ?? null, baseline.dmarc_record ?? null, id).run();
 }
 
 // ── Report Records ───────────────────────────────────────────

@@ -1,5 +1,8 @@
 import { handleEmail } from './email/handler';
 import { handleApi } from './api/router';
+import { getActiveSubscriptions, updateSubscriptionBaseline } from './db/queries';
+import { checkSubscription } from './monitor/check';
+import { sendChangeNotification } from './monitor/notify';
 
 export interface Env {
   DB: D1Database;
@@ -13,6 +16,7 @@ export interface Env {
   REPORTS_DOMAIN: string;       // e.g. "reports.inboxangel.io" — REQUIRED, no default
   CHECK_PREFIX?: string;        // free-check address prefix, default "check-" (self-hosters can rename)
   FROM_EMAIL: string;
+  RESEND_API_KEY?: string;      // transactional email for monitor alerts (optional — logs if unset)
 }
 
 // HTTP API (dashboard calls, DNS provisioning)
@@ -24,5 +28,25 @@ export default {
   // Email Worker (inbound: free check + DMARC RUA reports)
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     await handleEmail(message, env, ctx);
+  },
+
+  // Daily cron — re-check DNS for all active monitor subscriptions
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const { results: subscriptions } = await getActiveSubscriptions(env.DB, 200);
+    console.log(`[monitor] checking ${subscriptions.length} subscriptions`);
+
+    for (const sub of subscriptions) {
+      try {
+        const { changes, newBaseline } = await checkSubscription(sub);
+        await updateSubscriptionBaseline(env.DB, sub.id, newBaseline);
+
+        if (changes.length > 0) {
+          console.log(`[monitor] ${sub.domain} changed: ${changes.map(c => c.field).join(', ')}`);
+          await sendChangeNotification(sub.email, sub.domain, changes, env);
+        }
+      } catch (e) {
+        console.error(`[monitor] error checking ${sub.domain}:`, e);
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;
