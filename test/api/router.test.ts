@@ -77,6 +77,12 @@ describe('GET /health', () => {
     const body = await res.json() as any;
     expect(typeof body.ts).toBe('number');
   });
+
+  it('includes semver version string', async () => {
+    const res = await handleApi(req('GET', '/health'), makeEnv(), ctx);
+    const body = await res.json() as any;
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
 });
 
 // ── 404 for unknown paths ─────────────────────────────────────

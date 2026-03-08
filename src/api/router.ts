@@ -15,6 +15,7 @@
 
 import { Env } from '../index';
 import { requireAuth, AuthError } from './auth';
+import { version } from '../../package.json';
 import {
   getDomainsByCustomer,
   getDomainById,
@@ -180,7 +181,7 @@ export async function handleApi(
 
   // Unauthenticated routes
   if (path === '/health' && method === 'GET') {
-    return json({ ok: true, ts: Date.now() });
+    return json({ ok: true, version, ts: Date.now() });
   }
 
   // POST /api/check-sessions — generate a unique free-check email for a browser session
