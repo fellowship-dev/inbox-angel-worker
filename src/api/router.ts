@@ -65,9 +65,9 @@ async function addDomain(request: Request, env: Env, customerId: string): Promis
   }
 
   // RUA address derived from customer ID + domain slug (unique per domain)
+  if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
   const slug = domain.replace(/\./g, '-');
-  const reportsDomain = env.REPORTS_DOMAIN || 'reports.inboxangel.io';
-  const ruaAddress = `${customerId}-${slug}@${reportsDomain}`;
+  const ruaAddress = `${customerId}-${slug}@${env.REPORTS_DOMAIN}`;
 
   // Provision the cross-domain DMARC authorization record first.
   // If CF fails we bail before touching the DB — no orphaned rows.
@@ -184,9 +184,10 @@ export async function handleApi(
 
   // POST /api/check-sessions — generate a unique free-check email for a browser session
   if (path === '/api/check-sessions' && method === 'POST') {
+    if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
     const token = crypto.randomUUID();
-    const reportsDomain = env.REPORTS_DOMAIN || 'reports.inboxangel.io';
-    return json({ token, email: `check-${token}@${reportsDomain}` }, 201);
+    const checkPrefix = env.CHECK_PREFIX ?? 'check-';
+    return json({ token, email: `${checkPrefix}${token}@${env.REPORTS_DOMAIN}` }, 201);
   }
 
   // GET /api/check-sessions/:token — poll until the check email has been processed

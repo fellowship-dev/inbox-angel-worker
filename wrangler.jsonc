@@ -1,4 +1,16 @@
 {
+	// ── Self-hosting checklist ──────────────────────────────────────────────────
+	// 1. Replace "inbox-angel-worker" below with your own worker name
+	// 2. Run: wrangler d1 create <your-db-name>  → paste database_id below
+	// 3. Set REPORTS_DOMAIN to the subdomain you'll receive reports on
+	//    (e.g. "reports.yourdomain.com") — must be on your CF zone
+	// 4. Set FROM_EMAIL to any address on that domain
+	// 5. Run: wrangler secret put CLOUDFLARE_API_TOKEN  (DNS:Edit + Zone:Read)
+	//         wrangler secret put API_KEY               (your chosen auth key)
+	// 6. In CF dashboard: Email Routing → catch-all → Send to Worker
+	// 7. wrangler d1 migrations apply <your-db-name> --remote && wrangler deploy
+	// ───────────────────────────────────────────────────────────────────────────
+
 	"name": "inbox-angel-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-01",
@@ -17,20 +29,21 @@
 		}
 	],
 
-	// Email Worker — handles *.reports.inboxangel.io
+	// Email Worker — catch-all on REPORTS_DOMAIN
 	"email": [
 		{
 			"name": "EMAIL"
 		}
 	],
 
-	// Environment variables (secrets set via wrangler secret put)
+	// Environment variables — secrets go via: wrangler secret put <NAME>
 	"vars": {
-		"AUTH0_DOMAIN": "",
-		"AUTH0_AUDIENCE": "https://api.inboxangel.io",
+		"AUTH0_DOMAIN": "",           // empty = bypass mode, use API_KEY header instead
+		"AUTH0_AUDIENCE": "",         // e.g. "https://api.yourdomain.com"
 		"CLOUDFLARE_ACCOUNT_ID": "",
-		"CLOUDFLARE_ZONE_ID": "",
-		"REPORTS_DOMAIN": "reports.inboxangel.io",
-		"FROM_EMAIL": "check@reports.inboxangel.io"
+		"CLOUDFLARE_ZONE_ID": "",     // zone ID of the domain receiving reports
+		"REPORTS_DOMAIN": "",         // REQUIRED: e.g. "reports.yourdomain.com"
+		"CHECK_PREFIX": "check-",     // prefix for free-check addresses (optional)
+		"FROM_EMAIL": ""              // REQUIRED: reply-from for free-check emails
 	}
 }

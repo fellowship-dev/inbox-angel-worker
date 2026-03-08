@@ -13,8 +13,9 @@ export async function handleEmail(
   const to = message.to.toLowerCase();
   const localPart = to.split('@')[0];
 
-  if (localPart.startsWith('check-')) {
-    const token = localPart.slice('check-'.length);
+  const checkPrefix = env.CHECK_PREFIX ?? 'check-';
+  if (localPart.startsWith(checkPrefix)) {
+    const token = localPart.slice(checkPrefix.length);
     await handleFreeCheck(message, env, token);
   } else {
     // Any other address is treated as a customer RUA inbox
