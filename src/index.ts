@@ -7,6 +7,7 @@ import { sendWeeklyDigests } from './digest/weekly';
 
 export interface Env {
   DB: D1Database;
+  ASSETS: Fetcher;
   AUTH0_DOMAIN: string;         // empty = bypass mode (use X-Api-Key)
   AUTH0_AUDIENCE: string;
   AUTH0_ORG_CLAIM?: string;     // JWT claim for customer ID, default "org_id"
@@ -27,7 +28,11 @@ export interface Env {
 // HTTP API (dashboard calls, DNS provisioning)
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    return handleApi(request, env, ctx);
+    const { pathname } = new URL(request.url);
+    if (pathname === '/health' || pathname.startsWith('/api/')) {
+      return handleApi(request, env, ctx);
+    }
+    return env.ASSETS.fetch(request);
   },
 
   // Email Worker (inbound: free check + DMARC RUA reports)

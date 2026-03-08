@@ -16,6 +16,10 @@
 
 	"name": "inbox-angel-worker",
 	"main": "src/index.ts",
+	"assets": {
+		"directory": "./dashboard",
+		"not_found_handling": "single-page-application"
+	},
 	"compatibility_date": "2025-03-01",
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
