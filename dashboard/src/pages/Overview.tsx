@@ -20,9 +20,43 @@ function computeStatus(policy: Domain['dmarc_policy'], passRate: number | null):
   return 'good';
 }
 
-const STATUS_ICON: Record<Status, string> = { good: '●', warning: '▲', danger: '✕' };
 const STATUS_COLOR: Record<Status, string> = { good: '#16a34a', warning: '#d97706', danger: '#dc2626' };
 const POLICY_LABEL: Record<string, string> = { none: 'none', quarantine: 'quar.', reject: 'reject' };
+
+// Lighthouse-style score circle — SVG ring with number inside
+function ScoreCircle({ score }: { score: number | null }) {
+  const size = 36;
+  const r = 14;
+  const cx = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const color = score === null ? '#d1d5db'
+    : score >= 95 ? '#0cce6b'
+    : score >= 70 ? '#ffa400'
+    : '#ff4e42';
+  const offset = score === null ? circumference : circumference * (1 - score / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth="3" />
+      {score !== null && (
+        <circle
+          cx={cx} cy={cx} r={r} fill="none"
+          stroke={color} strokeWidth="3"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${cx} ${cx})`}
+        />
+      )}
+      <text
+        x={cx} y={cx}
+        dominantBaseline="central" textAnchor="middle"
+        fontSize="9" fontWeight="700" fill={color}
+      >
+        {score !== null ? score : '—'}
+      </text>
+    </svg>
+  );
+}
 
 interface Props {
   onUnauthorized: () => void;
@@ -107,11 +141,8 @@ export function Overview({ onUnauthorized }: Props) {
         </div>
       )}
 
-      {rows.map(({ domain, passRate, total, failed, status }) => {
-        const rateColor = passRate === null ? '#9ca3af'
-          : passRate >= 0.95 ? '#16a34a'
-          : passRate >= 0.7  ? '#d97706'
-          : '#dc2626';
+      {rows.map(({ domain, passRate, total, failed }) => {
+        const score = passRate !== null ? Math.round(passRate * 100) : null;
         return (
           <div
             key={domain.id}
@@ -120,17 +151,12 @@ export function Overview({ onUnauthorized }: Props) {
             onMouseEnter={() => setHovered(domain.id)}
             onMouseLeave={() => setHovered(null)}
           >
-            <span style={{ color: STATUS_COLOR[status], width: '1rem', flexShrink: 0 }}>
-              {STATUS_ICON[status]}
-            </span>
+            <ScoreCircle score={score} />
             <span style={{ flex: 1, fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {domain.domain}
             </span>
             <span style={styles.badge}>
               {domain.dmarc_policy ? POLICY_LABEL[domain.dmarc_policy] : '—'}
-            </span>
-            <span style={{ ...styles.stat, color: rateColor, fontWeight: 600 }}>
-              {passRate !== null ? `${Math.round(passRate * 100)}%` : '—'}
             </span>
             {!mobile && total > 0 && (
               <span style={styles.stat}>{total.toLocaleString()} msg</span>
