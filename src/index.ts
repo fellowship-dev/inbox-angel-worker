@@ -5,6 +5,7 @@ import { checkSubscription } from './monitor/check';
 import { sendChangeNotification } from './monitor/notify';
 import { sendWeeklyDigests } from './digest/weekly';
 import { ensureMigrated } from './db/migrate';
+import { reportsDomain, fromEmail } from './env-utils';
 
 export interface Env {
   DB: D1Database | undefined;
@@ -24,13 +25,13 @@ export interface Env {
   DEBUG?: string;                // "true" for verbose CF Workers Logs (default: off)
   // Bindings
   SEND_EMAIL?: SendEmail;        // CF Email Workers outbound binding
-  // Secrets
-  REPORTS_DOMAIN?: string;       // e.g. "reports.yourdomain.com"
-  FROM_EMAIL?: string;           // e.g. "noreply@reports.yourdomain.com"
   // Self-hosted single-tenant init — auto-provisions on first request
-  CUSTOMER_DOMAIN?: string;      // e.g. "yourdomain.com"
-  CUSTOMER_EMAIL?: string;       // alert and report recipient
-  CUSTOMER_NAME?: string;        // display name (defaults to "Self-hosted")
+  BASE_DOMAIN?: string;          // e.g. "yourdomain.com" — required
+  CUSTOMER_EMAIL?: string;       // alert/digest recipient (optional)
+  CUSTOMER_NAME?: string;        // display name (optional, defaults to "Self-hosted")
+  // Optional overrides — derived from BASE_DOMAIN when not set
+  REPORTS_DOMAIN?: string;       // defaults to "reports.<BASE_DOMAIN>"
+  FROM_EMAIL?: string;           // defaults to "noreply@reports.<BASE_DOMAIN>"
 }
 
 // HTTP API (dashboard calls, DNS provisioning)
@@ -56,9 +57,13 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
     if (!env.DB) { console.error('[cron] DB binding missing — D1 not configured'); return; }
     await ensureMigrated(env.DB);
+    const rd = reportsDomain(env) ?? '';
+    const fe = fromEmail(env) ?? '';
+    const derivedEnv = { ...env, REPORTS_DOMAIN: rd, FROM_EMAIL: fe };
+
     // Weekly digest — every Monday 9am UTC
     if (event.cron === '0 9 * * 1') {
-      await sendWeeklyDigests(env);
+      await sendWeeklyDigests(derivedEnv);
       return;
     }
 
@@ -73,7 +78,7 @@ export default {
 
         if (changes.length > 0) {
           console.log(`[monitor] ${sub.domain} changed: ${changes.map(c => c.field).join(', ')}`);
-          await sendChangeNotification(sub.email, sub.domain, changes, env);
+          await sendChangeNotification(sub.email, sub.domain, changes, derivedEnv);
         }
       } catch (e) {
         console.error(`[monitor] error checking ${sub.domain}:`, e);
@@ -108,14 +113,9 @@ function setupPage(): Response {
     <li>Create a D1 database:<br><pre>wrangler d1 create inbox-angel</pre></li>
     <li>Copy the <code>database_id</code> from the output and paste it into <code>wrangler.jsonc</code> under <code>d1_databases[0].database_id</code>.</li>
     <li>Redeploy:<br><pre>npm run deploy</pre>The first request after redeploy will auto-migrate the schema — no extra step needed.</li>
-    <li>Set your secrets:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN
-wrangler secret put CLOUDFLARE_ZONE_ID
-wrangler secret put REPORTS_DOMAIN
-wrangler secret put FROM_EMAIL
-wrangler secret put CUSTOMER_DOMAIN
-wrangler secret put CUSTOMER_EMAIL
-wrangler secret put CUSTOMER_NAME</pre>
-      <small>No <code>API_KEY</code> needed — you'll create your login on first visit to the dashboard.</small>
+    <li>Set your secrets and vars — edit <code>wrangler.jsonc</code> and fill in <code>BASE_DOMAIN</code> and optionally <code>CUSTOMER_EMAIL</code> / <code>CUSTOMER_NAME</code>. Then set the two secrets:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN
+wrangler secret put CLOUDFLARE_ZONE_ID</pre>
+      <small>No <code>API_KEY</code> needed — you'll create your login on first visit to the dashboard. <code>REPORTS_DOMAIN</code> and <code>FROM_EMAIL</code> are auto-derived from <code>BASE_DOMAIN</code> unless you override them.</small>
     </li>
   </ol>
   <div class="note">

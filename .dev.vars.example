@@ -1,44 +1,12 @@
-# InboxAngel Worker — required secrets
+# InboxAngel Worker — secrets
 # Deploy button: fill these in during setup.
 # CLI: copy to .dev.vars for local dev, or set via: wrangler secret put <NAME>
 
 # ── Cloudflare API token (runtime) ───────────────────────────────────────────
-# Create at: dash.cloudflare.com → My Profile → API Tokens → Create Custom Token
-# Name it anything (e.g. "inbox-angel-runtime"). Required permissions:
-#   Account / Account Settings : Read
-#   Account / Email Sending    : Edit
-#   Zone    / Email Routing Rules : Edit
-#   Zone    / DNS              : Edit
-#   Zone    / Workers Routes   : Edit
-# Under Zone Resources → select the zone where REPORTS_DOMAIN lives.
+# See README → "Before you start" for step-by-step instructions and required permissions.
 # ⚠️  This is NOT the same token the deploy button auto-creates for deployment.
 CLOUDFLARE_API_TOKEN=
 
 # Your Cloudflare Zone ID — find it at:
 # dash.cloudflare.com → click your domain → right sidebar → Zone ID
 CLOUDFLARE_ZONE_ID=
-
-# ── Email config ─────────────────────────────────────────────────────────────
-# Subdomain for receiving DMARC reports and free-check emails.
-# Must be on the same Cloudflare zone as above (e.g. reports.yourdomain.com)
-REPORTS_DOMAIN=
-
-# From address for outbound notification emails (must be on the same zone)
-FROM_EMAIL=
-
-# ── Your account ─────────────────────────────────────────────────────────────
-# Your domain — auto-provisions your account on first visit to the dashboard
-CUSTOMER_DOMAIN=
-
-# Your email address — receives monitoring alerts and weekly digests
-CUSTOMER_EMAIL=
-
-# Display name shown in the dashboard (e.g. "Acme Corp")
-CUSTOMER_NAME=
-
-# ── Optional ──────────────────────────────────────────────────────────────────
-# Verbose logging to Cloudflare Workers Logs (nothing sent externally)
-DEBUG=false
-
-# Anonymous usage events (event types + worker version only, no domains or emails)
-TELEMETRY_ENABLED=false

@@ -8,6 +8,7 @@ import { extractAuthResults } from './parse-headers';
 import { checkDomain } from './dns-check';
 import { buildSummary, formatCheckReport } from './report-formatter';
 import { insertCheckResult } from '../db/queries';
+import { fromEmail as derivedFromEmail } from '../env-utils';
 
 function extractDomain(email: string): string {
   const at = email.lastIndexOf('@');
@@ -57,7 +58,7 @@ export async function handleFreeCheck(
   const reportText = formatCheckReport(fromEmail, summary, auth, dns);
 
   // 5. Send reply
-  const replyFrom = `InboxAngel <${env.FROM_EMAIL}>`;
+  const replyFrom = `InboxAngel <${derivedFromEmail(env) ?? 'noreply@inboxangel.io'}>`;
   const subject = `Email security check — ${domain}`;
   await message.reply(buildMimeReply(replyFrom, fromEmail, subject, reportText));
 

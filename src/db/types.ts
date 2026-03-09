@@ -91,5 +91,19 @@ export interface ReportRecord {
   spf_result: SpfResult | null;
   spf_domain: string | null;
   header_from: string | null;
+  reverse_dns: string | null;
+  base_domain: string | null;
+  country_code: string | null;
+  org: string | null;
   created_at: number;
+}
+
+export interface IpInfoRow {
+  ip: string;
+  reverse_dns: string | null;
+  base_domain: string | null;
+  country_code: string | null;
+  org: string | null;
+  asn: string | null;
+  fetched_at: number;
 }

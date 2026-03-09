@@ -29,6 +29,7 @@ export class ParseEmailError extends Error {
 export async function parseDmarcEmail(
   bytes: Uint8Array,
   offline = false,
+  db?: D1Database,
 ): Promise<AggregateReport> {
   let xml: string;
 
@@ -42,7 +43,7 @@ export async function parseDmarcEmail(
   }
 
   try {
-    return await parseAggregateReportXml(xml, offline);
+    return await parseAggregateReportXml(xml, offline, db);
   } catch (err) {
     if (err instanceof InvalidAggregateReport) {
       throw new ParseEmailError(`Invalid DMARC report XML: ${err.message}`, err);

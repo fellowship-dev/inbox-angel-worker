@@ -5,6 +5,7 @@ export interface Domain {
   rua_address: string;
   customer_id: string;
   created_at: number; // unix timestamp
+  alerts_enabled: number; // 1 = on, 0 = off
 }
 
 export interface DailyStat {

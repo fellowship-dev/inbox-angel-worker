@@ -4,7 +4,7 @@ import {
   Identifiers, InvalidAggregateReport, IpInfo, PolicyEvaluated,
   PolicyOverrideReason, ReportRecord, SpfAuthResult,
 } from './types';
-import { getIpInfo } from './ip-info';
+import { getIpInfo, getCachedIpInfo, cacheIpInfo } from './ip-info';
 
 // Regexes ported from parsedmarc
 const XML_HEADER_REGEX = /<\?xml[^>]+\?>/i;
@@ -53,17 +53,32 @@ function strOrNull(val: unknown): string | null {
 
 // ── _parse_report_record ──────────────────────────────────────────────────
 
+const BARE_IP_INFO = (ip: string): IpInfo => ({
+  ip, reverse_dns: null, base_domain: null, country_code: null,
+  country_name: null, subdivision: null, city: null, org: null, asn: null,
+});
+
 async function parseReportRecord(
   record: Record<string, unknown>,
   offline = false,
+  db?: D1Database,
 ): Promise<ReportRecord> {
   const row = record['row'] as Record<string, unknown>;
   if (!row?.['source_ip']) throw new Error('Source IP address is empty');
 
   const ip = str(row['source_ip']);
-  const source: IpInfo = offline
-    ? { ip, reverse_dns: null, base_domain: null, country_code: null, country_name: null, subdivision: null, city: null }
-    : await getIpInfo(ip);
+  let source: IpInfo;
+  if (offline) {
+    source = BARE_IP_INFO(ip);
+  } else {
+    const cached = db ? await getCachedIpInfo(db, ip) : null;
+    if (cached) {
+      source = cached;
+    } else {
+      source = await getIpInfo(ip);
+      if (db) await cacheIpInfo(db, source).catch(() => {}); // best-effort
+    }
+  }
 
   const count = parseInt(str(row['count']), 10) || 1;
 
@@ -145,6 +160,7 @@ async function parseReportRecord(
 export async function parseAggregateReportXml(
   xml: string | Uint8Array,
   offline = false,
+  db?: D1Database,
 ): Promise<AggregateReport> {
   try {
     if (xml instanceof Uint8Array) {
@@ -222,7 +238,7 @@ export async function parseAggregateReportXml(
     const records: ReportRecord[] = [];
     for (const r of recordList as Record<string, unknown>[]) {
       try {
-        records.push(await parseReportRecord(r, offline));
+        records.push(await parseReportRecord(r, offline, db));
       } catch (e) {
         // parsedmarc warns and skips bad records — match that behaviour
         console.warn(`Skipping unparseable record: ${e}`);

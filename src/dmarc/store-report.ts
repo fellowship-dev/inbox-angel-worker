@@ -56,6 +56,10 @@ function mapRecord(
     spf_result:  (rec.auth_results.spf[0]?.result  ?? null) as DbRecord['spf_result'],
     spf_domain:  rec.auth_results.spf[0]?.domain  ?? null,
     header_from: rec.identifiers.header_from,
+    reverse_dns: rec.source.reverse_dns,
+    base_domain: rec.source.base_domain,
+    country_code: rec.source.country_code,
+    org: rec.source.org ?? null,
   };
 }
 

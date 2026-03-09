@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, deleteDomain, getMonitorSubs, setMonitorSubActive } from '../api';
+import { getDomains, deleteDomain, getMonitorSubs, setMonitorSubActive, setDomainAlerts } from '../api';
 import type { MonitorSub } from '../api';
 import type { Domain } from '../types';
 
@@ -41,6 +41,7 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [togglingAlerts, setTogglingAlerts] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +59,18 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
+
+  const toggleAlerts = async () => {
+    if (!domain) return;
+    setTogglingAlerts(true);
+    const next = !domain.alerts_enabled;
+    try {
+      await setDomainAlerts(id, next);
+      setDomain(prev => prev ? { ...prev, alerts_enabled: next ? 1 : 0 } : prev);
+    } catch { /* ignore */ } finally {
+      setTogglingAlerts(false);
+    }
+  };
 
   const toggleSub = async (sub: MonitorSub) => {
     setTogglingId(sub.id);
@@ -132,6 +145,23 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
       {/* Monitoring alerts */}
       <section style={s.section}>
         <h3 style={s.sectionTitle}>Monitoring alerts</h3>
+        <div style={{ ...s.card, marginBottom: '0.75rem' }}>
+          <div style={s.infoRow}>
+            <div style={{ flex: 1 }}>
+              <div style={s.infoText}>Alerts enabled</div>
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.15rem' }}>
+                {domain.alerts_enabled ? 'Sending change notifications for this domain' : 'All alerts paused for this domain'}
+              </div>
+            </div>
+            <button
+              style={{ ...s.copyBtn, background: domain.alerts_enabled ? '#6b7280' : '#111827', opacity: togglingAlerts ? 0.5 : 1 }}
+              onClick={toggleAlerts}
+              disabled={togglingAlerts}
+            >
+              {domain.alerts_enabled ? 'Pause all' : 'Resume all'}
+            </button>
+          </div>
+        </div>
         {subs.length === 0 ? (
           <div style={s.card}>
             <p style={{ ...s.exportDesc, paddingBottom: '0.85rem' }}>

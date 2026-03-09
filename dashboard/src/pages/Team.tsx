@@ -12,6 +12,7 @@ function formatDate(ts: number): string {
 
 export function Team({ onUnauthorized }: Props) {
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,8 +33,9 @@ export function Team({ onUnauthorized }: Props) {
   async function load() {
     setLoading(true);
     try {
-      const { users } = await getTeam();
+      const { users, current_user_id } = await getTeam();
       setMembers(users);
+      setCurrentUserId(current_user_id);
     } catch (e: any) {
       if (e.message === '401' || e.message === '403') { onUnauthorized(); return; }
       setError(e.message ?? 'Failed to load team');
@@ -102,14 +104,16 @@ export function Team({ onUnauthorized }: Props) {
                     {m.role}
                   </span>
                   <span style={s.muted}>{m.last_login_at ? formatDate(m.last_login_at) : 'Never logged in'}</span>
-                  <button
-                    style={s.removeBtn}
-                    onClick={() => remove(m.id)}
-                    disabled={removingId === m.id}
-                    title="Remove member"
-                  >
-                    {removingId === m.id ? '…' : '✕'}
-                  </button>
+                  {m.id !== currentUserId && (
+                    <button
+                      style={s.removeBtn}
+                      onClick={() => remove(m.id)}
+                      disabled={removingId === m.id}
+                      title="Remove member"
+                    >
+                      {removingId === m.id ? '…' : '✕'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

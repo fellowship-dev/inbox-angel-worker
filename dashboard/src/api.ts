@@ -90,6 +90,14 @@ export async function deleteDomain(id: number): Promise<void> {
   if (!res.ok) await throwApiError(res);
 }
 
+export async function setDomainAlerts(id: number, enabled: boolean): Promise<void> {
+  const res = await apiFetch(`/api/domains/${id}/alerts`, {
+    method: 'PATCH',
+    body: JSON.stringify({ alerts_enabled: enabled }),
+  });
+  if (!res.ok) await throwApiError(res);
+}
+
 export interface MonitorSub {
   id: number;
   email: string;
@@ -121,7 +129,7 @@ export interface TeamMember {
   created_at: number;
 }
 
-export async function getTeam(): Promise<{ users: TeamMember[] }> {
+export async function getTeam(): Promise<{ users: TeamMember[]; current_user_id: string }> {
   const res = await apiFetch('/api/team');
   if (!res.ok) await throwApiError(res);
   return res.json();

@@ -105,9 +105,10 @@ export function insertMonitorSubscription(
 
 export function getActiveSubscriptions(db: D1Database, limit = 100) {
   return db.prepare(`
-    SELECT * FROM monitor_subscriptions
-    WHERE active = 1
-    ORDER BY last_checked_at ASC NULLS FIRST
+    SELECT ms.* FROM monitor_subscriptions ms
+    JOIN domains d ON d.domain = ms.domain
+    WHERE ms.active = 1 AND d.alerts_enabled = 1
+    ORDER BY ms.last_checked_at ASC NULLS FIRST
     LIMIT ?
   `).bind(limit).all<MonitorSubscription>();
 }
@@ -368,6 +369,11 @@ export function setMonitorSubActive(db: D1Database, id: number, active: boolean)
     .bind(active ? 1 : 0, id).run();
 }
 
+export function setDomainAlertsEnabled(db: D1Database, domainId: number, enabled: boolean) {
+  return db.prepare(`UPDATE domains SET alerts_enabled = ? WHERE id = ?`)
+    .bind(enabled ? 1 : 0, domainId).run();
+}
+
 // ── Users ─────────────────────────────────────────────────────
 
 export interface User {
@@ -460,13 +466,15 @@ export function insertReportRecords(db: D1Database, records: Omit<ReportRecord, 
   const stmt = db.prepare(`
     INSERT INTO report_records
       (report_id, customer_id, source_ip, count, disposition,
-       dkim_result, dkim_domain, spf_result, spf_domain, header_from)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       dkim_result, dkim_domain, spf_result, spf_domain, header_from,
+       reverse_dns, base_domain, country_code, org)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   return db.batch(records.map(r =>
     stmt.bind(
       r.report_id, r.customer_id, r.source_ip, r.count, r.disposition,
-      r.dkim_result, r.dkim_domain, r.spf_result, r.spf_domain, r.header_from
+      r.dkim_result, r.dkim_domain, r.spf_result, r.spf_domain, r.header_from,
+      r.reverse_dns ?? null, r.base_domain ?? null, r.country_code ?? null, r.org ?? null
     )
   ));
 }

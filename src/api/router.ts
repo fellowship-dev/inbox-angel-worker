@@ -14,7 +14,7 @@
 //   GET  /api/reports/:id                 — single report with per-IP records
 //   GET  /api/check-results               — recent free check results (last 20)
 //
-// Self-hosted lazy init: if CUSTOMER_DOMAIN env var is set and no customer exists yet,
+// Self-hosted lazy init: if BASE_DOMAIN env var is set and no customer exists yet,
 // the first authenticated request auto-provisions customer + domain (no bootstrap call needed).
 
 import { Env } from '../index';
@@ -40,6 +40,7 @@ import {
   setSetting,
   getMonitorSubsByDomain,
   setMonitorSubActive,
+  setDomainAlertsEnabled,
   getUserByEmail,
   getUserBySession,
   getAllUsers,
@@ -59,6 +60,7 @@ import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/pr
 import { ensureEmailRouting } from '../setup/email-routing';
 import { track } from '../telemetry';
 import { debug } from '../debug';
+import { reportsDomain, fromEmail } from '../env-utils';
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -99,7 +101,8 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
     return err('invalid domain format', 400);
   }
 
-  if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
+  const rdomain = reportsDomain(env);
+  if (!rdomain) return err('REPORTS_DOMAIN is not configured', 500);
 
   // On first domain add, auto-configure email routing (idempotent)
   const { results: existing } = await getDomainsByCustomer(env.DB, customerId);
@@ -112,7 +115,7 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
   }
 
   // Fixed rua address — routing is by XML policy_domain, not by address encoding
-  const ruaAddress = `rua@${env.REPORTS_DOMAIN}`;
+  const ruaAddress = `rua@${rdomain}`;
 
   // Provision the cross-domain DMARC authorization record.
   // If CF creds are absent, returns manual mode — caller gets instructions instead of auto-record.
@@ -228,36 +231,37 @@ async function getReport(env: Env, customerId: string, reportId: string): Promis
 }
 
 // ── Self-hosted lazy init ──────────────────────────────────────
-// When CUSTOMER_DOMAIN env var is set and no customer/domain exists yet,
+// When BASE_DOMAIN env var is set and no customer/domain exists yet,
 // auto-provision on the first authenticated request — no bootstrap API call needed.
 
 async function ensureCustomerExists(env: Env, _customerId: string): Promise<void> {
-  if (!env.CUSTOMER_DOMAIN) return; // hosted/multi-tenant mode — nothing to auto-init
+  if (!env.BASE_DOMAIN) return; // hosted/multi-tenant mode — nothing to auto-init
 
-  // Always use CUSTOMER_DOMAIN as the stable customer ID for single-tenant mode.
+  // Always use BASE_DOMAIN as the stable customer ID for single-tenant mode.
   // This prevents customer records from fragmenting across session/key changes.
-  const customerId = env.CUSTOMER_DOMAIN;
+  const customerId = env.BASE_DOMAIN;
   const { results } = await getDomainsByCustomer(env.DB, customerId);
   if (results.length > 0) return; // already set up
 
-  const domain = env.CUSTOMER_DOMAIN.toLowerCase().trim();
+  const domain = env.BASE_DOMAIN.toLowerCase().trim();
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
-    console.warn('[init] CUSTOMER_DOMAIN is invalid, skipping auto-provision:', domain);
+    console.warn('[init] BASE_DOMAIN is invalid, skipping auto-provision:', domain);
     return;
   }
-  if (!env.REPORTS_DOMAIN) {
-    console.warn('[init] REPORTS_DOMAIN is not set, skipping auto-provision');
+  const rd = reportsDomain(env);
+  if (!rd) {
+    console.warn('[init] REPORTS_DOMAIN is not set and BASE_DOMAIN is missing, skipping auto-provision');
     return;
   }
 
   await upsertCustomer(env.DB, {
     id: customerId,
     name: env.CUSTOMER_NAME?.trim() || 'Self-hosted',
-    email: env.CUSTOMER_EMAIL?.trim() || env.FROM_EMAIL,
+    email: env.CUSTOMER_EMAIL?.trim() || fromEmail(env),
     plan: 'self-hosted',
   });
 
-  const ruaAddress = `rua@${env.REPORTS_DOMAIN}`;
+  const ruaAddress = `rua@${rd}`;
   const provision = await provisionDomain(env, domain);
   const result = await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
 
@@ -411,12 +415,13 @@ export async function handleApi(
 
   // POST /api/check-sessions — generate a unique free-check email for a browser session
   if (path === '/api/check-sessions' && method === 'POST') {
-    if (!env.REPORTS_DOMAIN) return err('REPORTS_DOMAIN is not configured', 500);
+    const rd = reportsDomain(env);
+    if (!rd) return err('REPORTS_DOMAIN is not configured', 500);
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     const token = Array.from(crypto.getRandomValues(new Uint8Array(8)))
       .map(b => chars[b % chars.length]).join('');
     track(env, 'check.created'); // fire-and-forget
-    return json({ token, email: `${token}@${env.REPORTS_DOMAIN}` }, 201);
+    return json({ token, email: `${token}@${rd}` }, 201);
   }
 
   // GET /api/check-sessions/:token — poll until the check email has been processed
@@ -521,10 +526,11 @@ export async function handleApi(
       const resetUrl = `${origin}/#/reset/${token}`;
       const emailBody = `Hi ${user.name},\n\nYou requested a password reset for your InboxAngel account.\n\nClick the link below to set a new password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, ignore this email — your password won't change.\n\nInboxAngel`;
 
-      if (env.SEND_EMAIL && env.FROM_EMAIL) {
+      const fe = fromEmail(env);
+      if (env.SEND_EMAIL && fe) {
         try {
           await env.SEND_EMAIL.send({
-            from: { name: 'InboxAngel', email: env.FROM_EMAIL },
+            from: { name: 'InboxAngel', email: fe },
             to: [user.email],
             subject: 'Reset your InboxAngel password',
             text: emailBody,
@@ -632,9 +638,9 @@ export async function handleApi(
   let customerId: string;
   try {
     const ctx = await requireAuth(request, { ...env, API_KEY: effectiveApiKey });
-    // In single-tenant mode use CUSTOMER_DOMAIN as stable ID regardless of session user
-    customerId = (env.CUSTOMER_DOMAIN && !env.AUTH0_DOMAIN)
-      ? env.CUSTOMER_DOMAIN
+    // In single-tenant mode use BASE_DOMAIN as stable ID regardless of session user
+    customerId = (env.BASE_DOMAIN && !env.AUTH0_DOMAIN)
+      ? env.BASE_DOMAIN
       : ctx.customerId;
     debug(env, 'auth.ok', { method, path, customerId, mode: env.AUTH0_DOMAIN ? 'jwt' : 'api-key' });
   } catch (e) {
@@ -643,7 +649,7 @@ export async function handleApi(
     return err('authentication error', 401);
   }
 
-  // Self-hosted lazy init — no-op in hosted mode (CUSTOMER_DOMAIN unset)
+  // Self-hosted lazy init — no-op in hosted mode (BASE_DOMAIN unset)
   await ensureCustomerExists(env, customerId);
 
   try {
@@ -741,12 +747,21 @@ export async function handleApi(
       return json({ ok: true });
     }
 
+    // PATCH /api/domains/:id/alerts — toggle domain-level alerts on/off
+    const domainAlertsMatch = path.match(/^\/api\/domains\/([^/]+)\/alerts$/);
+    if (domainAlertsMatch && method === 'PATCH') {
+      const body = await parseBody<{ alerts_enabled?: boolean }>(request);
+      if (typeof body.alerts_enabled !== 'boolean') return err('alerts_enabled (boolean) is required', 400);
+      await setDomainAlertsEnabled(env.DB, parseInt(domainAlertsMatch[1], 10), body.alerts_enabled);
+      return json({ ok: true });
+    }
+
     // GET /api/team — list all users (admin only)
     if (path === '/api/team' && method === 'GET') {
       const actor = await getUserBySession(env.DB, requestKey);
       if (!actor || actor.role !== 'admin') return err('admin required', 403);
       const { results } = await getAllUsers(env.DB);
-      return json({ users: results });
+      return json({ users: results, current_user_id: actor.id });
     }
 
     // POST /api/team/invite — generate one-time invite link (admin only)

@@ -12,7 +12,7 @@ interface Props {
 
 export function AuthGate({ onSave }: Props) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
-  const [view, setView] = useState<'auth' | 'forgot' | 'forgot-sent'>('auth');
+  const [view, setView] = useState<'auth' | 'forgot' | 'forgot-sent' | 'setup-done'>('auth');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +20,7 @@ export function AuthGate({ onSave }: Props) {
   const [telemetry, setTelemetry] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingToken, setPendingToken] = useState('');
 
   useEffect(() => {
     fetch('/api/auth/status')
@@ -63,7 +64,12 @@ export function AuthGate({ onSave }: Props) {
 
       const { token } = await res.json() as { token: string };
       localStorage.setItem('ia_api_key', token);
-      onSave(token);
+      if (!status?.configured) {
+        setPendingToken(token);
+        setView('setup-done');
+      } else {
+        onSave(token);
+      }
     } catch {
       setError('Network error — please try again');
     } finally {
@@ -137,6 +143,37 @@ export function AuthGate({ onSave }: Props) {
           <p style={s.subtitle}>If an account exists for <strong>{email}</strong>, we've sent a reset link. It expires in 1 hour.</p>
           <button type="button" onClick={() => { setView('auth'); setError(''); }} style={s.link}>
             ← Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'setup-done') {
+    return (
+      <div style={s.wrap}>
+        <div style={s.box}>
+          <div style={s.logo}>🪄 InboxAngel</div>
+          <div style={s.successBadge}>✓ Account created</div>
+          <h1 style={s.title}>One more thing</h1>
+          <p style={s.subtitle}>
+            To receive <strong>password reset emails</strong> and <strong>monitoring alerts</strong>,
+            you need to verify your email as a destination in Cloudflare Email Routing.
+          </p>
+          <div style={s.notice}>
+            <strong>Why?</strong> InboxAngel sends emails via Cloudflare's Email Workers
+            binding (<code style={s.code}>SEND_EMAIL</code>), which can only deliver to
+            verified destination addresses — this is a Cloudflare platform requirement,
+            not something we can bypass.
+          </div>
+          <ol style={s.steps}>
+            <li>Go to <strong>Cloudflare Dashboard → your zone → Email → Routing → Destinations</strong></li>
+            <li>Click <strong>Add destination</strong> and enter <code style={s.code}>{email}</code></li>
+            <li>Check your inbox and click the verification link Cloudflare sends</li>
+          </ol>
+          <p style={s.muted}>You can skip this for now and verify later — just know you won't receive emails until it's done.</p>
+          <button type="button" style={s.btn} onClick={() => onSave(pendingToken)}>
+            Continue to dashboard →
           </button>
         </div>
       </div>
@@ -317,4 +354,36 @@ const s = {
     textDecoration: 'underline',
   } as const,
   muted: { color: '#9ca3af', fontSize: '0.875rem' } as const,
+  successBadge: {
+    display: 'inline-block',
+    background: '#dcfce7',
+    color: '#16a34a',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    padding: '0.25rem 0.6rem',
+    borderRadius: '4px',
+  } as const,
+  notice: {
+    fontSize: '0.8rem',
+    color: '#374151',
+    background: '#fef9c3',
+    border: '1px solid #fde68a',
+    borderRadius: '6px',
+    padding: '0.75rem 1rem',
+    lineHeight: 1.5,
+  } as const,
+  code: {
+    fontFamily: 'monospace',
+    fontSize: '0.85em',
+    background: '#f3f4f6',
+    padding: '0.1em 0.3em',
+    borderRadius: '3px',
+  } as const,
+  steps: {
+    margin: '0',
+    paddingLeft: '1.25rem',
+    fontSize: '0.875rem',
+    color: '#374151',
+    lineHeight: 1.8,
+  } as const,
 };

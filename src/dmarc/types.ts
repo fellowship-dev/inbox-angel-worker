@@ -67,15 +67,17 @@ export interface Identifiers {
   envelope_to: string | null;
 }
 
-// Geo/reverse DNS info for a source IP (from geoip2 + DNS)
+// IP enrichment — reverse DNS + ASN/org/country via free DNS services
 export interface IpInfo {
   ip: string;
   reverse_dns: string | null;
   base_domain: string | null;
   country_code: string | null;
-  country_name: string | null;
-  subdivision: string | null;
-  city: string | null;
+  country_name: string | null; // not populated (no geo DB) — kept for compat
+  subdivision: string | null;  // not populated
+  city: string | null;         // not populated
+  org: string | null;          // e.g. "GOOGLE", "AMAZON-02"
+  asn: string | null;          // e.g. "15169"
 }
 
 export interface ReportRecord {

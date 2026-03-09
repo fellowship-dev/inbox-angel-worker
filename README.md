@@ -52,16 +52,20 @@ npm install && npm install --prefix dashboard
 npm run deploy
 ```
 
-Set secrets:
+Edit `wrangler.jsonc` and fill in the vars:
+
+```jsonc
+"BASE_DOMAIN": "yourdomain.com",     // required
+"CUSTOMER_EMAIL": "you@example.com", // optional — for alerts + digests
+"CUSTOMER_NAME": "Acme Corp",        // optional — dashboard display name
+// REPORTS_DOMAIN and FROM_EMAIL are auto-derived from BASE_DOMAIN if left empty
+```
+
+Then set the two secrets:
 
 ```bash
 wrangler secret put CLOUDFLARE_API_TOKEN # the runtime token you created above
 wrangler secret put CLOUDFLARE_ZONE_ID   # your zone ID (right sidebar on dash.cloudflare.com → your domain)
-wrangler secret put REPORTS_DOMAIN       # subdomain for reports, e.g. reports.yourdomain.com
-wrangler secret put FROM_EMAIL           # e.g. noreply@reports.yourdomain.com
-wrangler secret put CUSTOMER_DOMAIN      # your domain, e.g. yourdomain.com
-wrangler secret put CUSTOMER_EMAIL       # your email address
-wrangler secret put CUSTOMER_NAME        # your org display name
 ```
 
 ---
@@ -74,6 +78,20 @@ On first domain add, the Worker automatically:
 - Enables Email Routing on your Cloudflare zone
 - Adds MX records for `REPORTS_DOMAIN`
 - Sets the catch-all rule: `*@REPORTS_DOMAIN` → this Worker
+
+**Verify your email to receive alerts and password reset emails**
+
+InboxAngel sends email via Cloudflare's Email Workers `SEND_EMAIL` binding, which can only deliver to **verified destination addresses** in your Cloudflare zone's Email Routing settings. This is a Cloudflare platform requirement.
+
+After creating your account:
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → your zone → **Email → Routing → Destinations**
+2. Click **Add destination** and enter your email address
+3. Click the verification link Cloudflare sends you
+
+Until this is done, password reset emails and monitoring alert emails won't be delivered.
+
+> **Note:** If you used the deploy button and your `CUSTOMER_EMAIL` is already verified as a destination from prior use, you may already be set. Check the Destinations list.
 
 ---
 

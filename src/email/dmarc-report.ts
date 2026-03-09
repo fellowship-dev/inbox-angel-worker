@@ -32,7 +32,7 @@ export async function handleDmarcReport(
   let report;
   let rawXml: string | null = null;
   try {
-    report = await parseDmarcEmail(bytes);
+    report = await parseDmarcEmail(bytes, false, env.DB);
 
     // Best-effort: store raw XML for plain XML attachments (gz/zip → null)
     try {

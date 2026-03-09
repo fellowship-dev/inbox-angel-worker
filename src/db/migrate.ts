@@ -183,6 +183,30 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id);
     `,
 	},
+	{
+		// Domain-level alerts toggle
+		version: 9,
+		sql: `ALTER TABLE domains ADD COLUMN alerts_enabled INTEGER NOT NULL DEFAULT 1;`,
+	},
+	{
+		// IP info lookup/cache table + enrich report_records with geo/provider fields
+		version: 10,
+		sql: `
+      CREATE TABLE IF NOT EXISTS ip_info (
+        ip TEXT PRIMARY KEY,
+        reverse_dns TEXT,
+        base_domain TEXT,
+        country_code TEXT,
+        org TEXT,
+        asn TEXT,
+        fetched_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      ALTER TABLE report_records ADD COLUMN reverse_dns TEXT;
+      ALTER TABLE report_records ADD COLUMN base_domain TEXT;
+      ALTER TABLE report_records ADD COLUMN country_code TEXT;
+      ALTER TABLE report_records ADD COLUMN org TEXT;
+    `,
+	},
 ];
 
 let migrated = false;
