@@ -50,11 +50,11 @@
 	//        -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 	//        -H "Content-Type: application/json" \
 	//        -d '{"subdomain":"<your-chosen-name>"}'
-	// 9. wrangler d1 migrations apply <your-db-name> --remote && wrangler deploy
+	// 9. npm run migrate && npm run deploy
 	// ───────────────────────────────────────────────────────────────────────────
 
-	"name": "inbox-angel-worker",
-	"account_id": "f8a1abc24625b0ca9f9e34d87395c67c",
+	"name": "inbox-angel-worker",   // ← step 1: change to your worker name
+	"account_id": "YOUR_ACCOUNT_ID", // ← step 2: find at dash.cloudflare.com → Workers & Pages
 	"main": "src/index.ts",
 	"assets": {
 		"directory": "./dashboard/dist",
@@ -70,8 +70,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "inbox-angel",
-			"database_id": "f6e68969-48ba-4f33-bf47-d7e9376e9c0e",
+			"database_name": "inbox-angel",      // ← step 3a: change to your DB name
+			"database_id": "YOUR_DATABASE_ID",   // ← step 3b: from: wrangler d1 create <name>
 			"migrations_dir": "migrations"
 		}
 	],
@@ -92,10 +92,10 @@
 		}
 	],
 
-	// Custom domain route — remove if using workers.dev subdomain instead
-	// Requires Token A to have Zone / Workers Routes : Edit for this zone
+	// Custom domain route — remove this block if using workers.dev subdomain instead
+	// Requires your deploy token to have Zone / Workers Routes : Edit
 	"routes": [
-		{ "pattern": "inbox-angel-worker.fellowship.dev/*", "zone_name": "fellowship.dev" }
+		{ "pattern": "your-worker-name.yourdomain.com/*", "zone_name": "yourdomain.com" }
 	],
 
 	// Crons:
@@ -110,8 +110,8 @@
 	"vars": {
 		"AUTH0_DOMAIN": "",           // empty = bypass mode, use API_KEY header instead
 		"AUTH0_AUDIENCE": "",         // e.g. "https://api.yourdomain.com"
-		"CLOUDFLARE_ACCOUNT_ID": "f8a1abc24625b0ca9f9e34d87395c67c",
-		"CLOUDFLARE_ZONE_ID": "690972fb988fcd672204dabbaad64c47",
+		"CLOUDFLARE_ACCOUNT_ID": "YOUR_ACCOUNT_ID",  // same as account_id above
+		"CLOUDFLARE_ZONE_ID": "YOUR_ZONE_ID",        // dash.cloudflare.com → your domain → Overview
 		"WORKER_NAME": "inbox-angel-worker",  // must match the "name" field above
 		"TELEMETRY_ENABLED": "false",         // set to "true" to send anonymous usage stats
 		"DEBUG": "false"                      // set to "true" to enable verbose logs in CF Workers Logs (local only, nothing sent externally)

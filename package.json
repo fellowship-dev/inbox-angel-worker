@@ -3,8 +3,8 @@
 	"version": "0.7.0",
 	"private": true,
 	"scripts": {
-		"predeploy": "wrangler d1 migrations apply DB --remote",
 		"deploy": "npm run build:dashboard && wrangler deploy",
+		"migrate": "wrangler d1 migrations apply DB --remote",
 		"dev": "wrangler dev",
 		"dev:dashboard": "npm --prefix dashboard run dev",
 		"build:dashboard": "npm --prefix dashboard run build",
