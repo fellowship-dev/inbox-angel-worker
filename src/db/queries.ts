@@ -349,6 +349,13 @@ export function getSetting(db: D1Database, key: string) {
   return db.prepare(`SELECT value FROM settings WHERE key = ?`).bind(key).first<{ value: string }>();
 }
 
+export function setSetting(db: D1Database, key: string, value: string) {
+  return db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()
+  `).bind(key, value).run();
+}
+
 // ── Monitor Subscriptions (management) ───────────────────────
 
 export function getMonitorSubsByDomain(db: D1Database, domain: string) {

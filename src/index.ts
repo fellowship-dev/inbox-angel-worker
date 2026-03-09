@@ -103,13 +103,14 @@ function setupPage(): Response {
     <li>Create a D1 database:<br><pre>wrangler d1 create inbox-angel</pre></li>
     <li>Copy the <code>database_id</code> from the output and paste it into <code>wrangler.jsonc</code> under <code>d1_databases[0].database_id</code>.</li>
     <li>Redeploy:<br><pre>npm run deploy</pre>The first request after redeploy will auto-migrate the schema — no extra step needed.</li>
-    <li>Set your secrets:<br><pre>wrangler secret put API_KEY
-wrangler secret put CLOUDFLARE_API_TOKEN
+    <li>Set your secrets:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN
 wrangler secret put REPORTS_DOMAIN
 wrangler secret put FROM_EMAIL
 wrangler secret put CUSTOMER_DOMAIN
 wrangler secret put CUSTOMER_EMAIL
-wrangler secret put CUSTOMER_NAME</pre></li>
+wrangler secret put CUSTOMER_NAME</pre>
+      <small>No <code>API_KEY</code> needed — you'll create your login on first visit to the dashboard.</small>
+    </li>
   </ol>
   <div class="note">
     Full setup guide: <a href="https://github.com/Fellowship-dev/inbox-angel-worker#self-hosting" target="_blank">github.com/Fellowship-dev/inbox-angel-worker</a>

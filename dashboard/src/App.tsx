@@ -7,7 +7,7 @@ import { ReportDetail } from './pages/ReportDetail';
 import { DomainSettings } from './pages/DomainSettings';
 import { Explore } from './pages/Explore';
 import { EmailCheck } from './pages/EmailCheck';
-import { ApiKeyGate } from './ApiKeyGate';
+import { AuthGate } from './AuthGate';
 import { getVersion, type VersionInfo } from './api';
 
 const DISMISS_KEY = 'ia_update_dismissed';
@@ -68,7 +68,7 @@ export function App() {
 
   const mobile = useIsMobile();
 
-  if (!hasKey) return <ApiKeyGate onSave={() => setHasKey(true)} />;
+  if (!hasKey) return <AuthGate onSave={() => setHasKey(true)} />;
 
   return (
     <div style={{ ...styles.shell, padding: mobile ? '0 1rem' : '0 1.5rem' }}>

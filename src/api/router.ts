@@ -37,9 +37,11 @@ import {
   getAnomalySources,
   getAllSources,
   getSetting,
+  setSetting,
   getMonitorSubsByDomain,
   setMonitorSubActive,
 } from '../db/queries';
+import { hashPassword, verifyPassword } from './password';
 import type { DnsProvisionResult } from '../dns/provision';
 import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
 import { ensureEmailRouting } from '../setup/email-routing';
@@ -201,9 +203,12 @@ async function getReport(env: Env, customerId: string, reportId: string): Promis
 // When CUSTOMER_DOMAIN env var is set and no customer/domain exists yet,
 // auto-provision on the first authenticated request — no bootstrap API call needed.
 
-async function ensureCustomerExists(env: Env, customerId: string): Promise<void> {
+async function ensureCustomerExists(env: Env, _customerId: string): Promise<void> {
   if (!env.CUSTOMER_DOMAIN) return; // hosted/multi-tenant mode — nothing to auto-init
 
+  // Always use CUSTOMER_DOMAIN as the stable customer ID for single-tenant mode.
+  // This prevents customer records from fragmenting across session/key changes.
+  const customerId = env.CUSTOMER_DOMAIN;
   const { results } = await getDomainsByCustomer(env.DB, customerId);
   if (results.length > 0) return; // already set up
 
@@ -416,6 +421,63 @@ export async function handleApi(
     return json({ domain: checkResult.from_domain, email: body.email }, 201);
   }
 
+  // GET /api/auth/status — is password auth configured? + prefill from env vars
+  if (path === '/api/auth/status' && method === 'GET') {
+    const configured = !!(await getSetting(env.DB!, 'password_hash'))?.value;
+    return json({
+      configured,
+      prefill: {
+        name: env.CUSTOMER_NAME?.trim() || '',
+        email: env.CUSTOMER_EMAIL?.trim() || '',
+      },
+      telemetry_default: env.TELEMETRY_ENABLED === 'true',
+    });
+  }
+
+  // POST /api/auth/setup — first-time account creation (only works if not yet configured)
+  if (path === '/api/auth/setup' && method === 'POST') {
+    const existing = await getSetting(env.DB!, 'password_hash');
+    if (existing) return err('already configured — use /api/auth/login', 409);
+
+    const body = await parseBody<{ name?: string; email?: string; password?: string; telemetry?: boolean }>(request);
+    if (!body.email || !body.password) return err('email and password are required', 400);
+    if (body.password.length < 8) return err('password must be at least 8 characters', 400);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) return err('invalid email', 400);
+
+    const hash = await hashPassword(body.password);
+    const token = crypto.randomUUID();
+
+    await env.DB!.batch([
+      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('password_hash', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(hash),
+      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('user_email', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.email.toLowerCase().trim()),
+      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('user_name', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.name?.trim() || body.email),
+      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('session_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(token),
+      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('telemetry_opted_in', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.telemetry ? 'true' : 'false'),
+    ]);
+
+    return json({ token }, 201);
+  }
+
+  // POST /api/auth/login — verify password + issue new session token
+  if (path === '/api/auth/login' && method === 'POST') {
+    const body = await parseBody<{ email?: string; password?: string }>(request);
+    if (!body.email || !body.password) return err('email and password are required', 400);
+
+    const [hashRow, emailRow] = await Promise.all([
+      getSetting(env.DB!, 'password_hash'),
+      getSetting(env.DB!, 'user_email'),
+    ]);
+    if (!hashRow || !emailRow) return err('not configured — complete setup first', 400);
+    if (emailRow.value !== body.email.toLowerCase().trim()) return err('invalid credentials', 401);
+
+    const valid = await verifyPassword(body.password, hashRow.value);
+    if (!valid) return err('invalid credentials', 401);
+
+    const token = crypto.randomUUID();
+    await setSetting(env.DB!, 'session_token', token);
+    return json({ token });
+  }
+
   // GET /api/init-key — returns the auto-generated API key (only when API_KEY env is not set)
   // Used by the dashboard on first load to pre-fill the API key gate.
   if (path === '/api/init-key' && method === 'GET') {
@@ -439,13 +501,25 @@ export async function handleApi(
     return err('not found', 404);
   }
 
-  // Resolve effective API key: env secret takes priority, fall back to auto-generated DB key
-  const effectiveApiKey = env.API_KEY ?? (await getSetting(env.DB!, 'auto_api_key'))?.value;
+  // Resolve effective API key: env secret → session token → legacy auto-key
+  const requestKey = request.headers.get('x-api-key') ?? '';
+  let effectiveApiKey: string | undefined = env.API_KEY;
+  if (!effectiveApiKey) {
+    const sessionToken = (await getSetting(env.DB!, 'session_token'))?.value;
+    if (sessionToken && requestKey === sessionToken) {
+      effectiveApiKey = sessionToken;
+    } else {
+      effectiveApiKey = (await getSetting(env.DB!, 'auto_api_key'))?.value;
+    }
+  }
 
   let customerId: string;
   try {
     const ctx = await requireAuth(request, { ...env, API_KEY: effectiveApiKey });
-    customerId = ctx.customerId;
+    // In single-tenant mode use CUSTOMER_DOMAIN as stable ID regardless of key used
+    customerId = (env.CUSTOMER_DOMAIN && !env.AUTH0_DOMAIN)
+      ? env.CUSTOMER_DOMAIN
+      : ctx.customerId;
     debug(env, 'auth.ok', { method, path, customerId, mode: env.AUTH0_DOMAIN ? 'jwt' : 'api-key' });
   } catch (e) {
     debug(env, 'auth.fail', { method, path, error: e instanceof Error ? e.message : String(e) });
