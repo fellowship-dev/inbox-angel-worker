@@ -6,6 +6,7 @@ import { AddDomain } from './pages/AddDomain';
 import { ReportDetail } from './pages/ReportDetail';
 import { DomainSettings } from './pages/DomainSettings';
 import { Explore } from './pages/Explore';
+import { Anomalies } from './pages/Anomalies';
 import { EmailCheck } from './pages/EmailCheck';
 import { Team } from './pages/Team';
 import { AcceptInvite } from './pages/AcceptInvite';
@@ -126,6 +127,9 @@ export function App() {
         {/^\/domains\/(\d+)\/explore$/.test(route) && (
           <Explore domainId={parseInt(route.split('/')[2], 10)} onUnauthorized={handleUnauth} />
         )}
+        {/^\/domains\/(\d+)\/anomalies$/.test(route) && (
+          <Anomalies domainId={parseInt(route.split('/')[2], 10)} onUnauthorized={handleUnauth} />
+        )}
         {(() => {
           const m = route.match(/^\/domains\/(\d+)\/reports\/(\d{4}-\d{2}-\d{2})$/);
           return m ? <ReportDetail domainId={parseInt(m[1], 10)} date={m[2]} onUnauthorized={handleUnauth} /> : null;
@@ -134,6 +138,7 @@ export function App() {
          !/^\/domains\/\d+$/.test(route) &&
          !/^\/domains\/\d+\/settings$/.test(route) &&
          !/^\/domains\/\d+\/explore$/.test(route) &&
+         !/^\/domains\/\d+\/anomalies$/.test(route) &&
          !/^\/domains\/\d+\/reports\/\d{4}-\d{2}-\d{2}$/.test(route) && (
           <p style={{ color: '#9ca3af' }}>Page not found. <a href="#/">Back to overview</a></p>
         )}

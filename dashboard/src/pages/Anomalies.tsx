@@ -44,7 +44,7 @@ export function Anomalies({ domainId, domainName, onUnauthorized }: Props) {
     setLoading(true);
     setError(null);
     getDomainAnomalies(domainId, days)
-      .then(({ anomalies: a }) => { if (!cancelled) setAnomalies(a); })
+      .then(({ anomalies }) => { if (!cancelled) setAnomalies(anomalies); })
       .catch((e) => {
         if (cancelled) return;
         if (e.message === '401') { onUnauthorized(); return; }
@@ -138,6 +138,9 @@ function SourceTable({ sources, domainId, stale }: { sources: AnomalySource[]; d
                 >
                   <code style={s.ip}>{src.source_ip}</code>
                 </a>
+                {(src.org || src.base_domain) && (
+                  <div style={s.sub}>{src.org ?? src.base_domain}</div>
+                )}
                 {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                 {via && <div style={s.sub}>via {via}</div>}
               </td>

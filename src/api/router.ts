@@ -690,6 +690,19 @@ export async function handleApi(
       const { results } = await getAllSources(env.DB, id, since);
       return json({ days, domain: domain.domain, sources: results });
     }
+    // GET /api/domains/:id/anomalies?days=30
+    const anomaliesMatch = path.match(/^\/api\/domains\/([^/]+)\/anomalies$/);
+    if (anomaliesMatch && method === 'GET') {
+      const id = parseInt(anomaliesMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+      const rawDays = parseInt(url.searchParams.get('days') ?? '30', 10);
+      const days = Math.min(isNaN(rawDays) ? 30 : rawDays, 90);
+      const since = Math.floor(Date.now() / 1000) - days * 86400;
+      const { results } = await getAnomalySources(env.DB, id, since);
+      return json({ days, domain: domain.domain, anomalies: results });
+    }
     // GET /api/domains/:id/dns-check — check if user has added the _dmarc TXT record
     const dnsCheckMatch = path.match(/^\/api\/domains\/([^/]+)\/dns-check$/);
     if (dnsCheckMatch && method === 'GET') {

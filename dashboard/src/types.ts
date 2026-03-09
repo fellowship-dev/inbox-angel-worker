@@ -56,6 +56,8 @@ export interface AnomalySource {
   dkim_pass: number;
   first_seen: string; // YYYY-MM-DD
   last_seen: string;  // YYYY-MM-DD
+  base_domain: string | null;
+  org: string | null;
 }
 
 export interface CheckResult {

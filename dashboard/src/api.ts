@@ -60,6 +60,12 @@ export async function getDomainExplore(id: number, days = 30): Promise<{ days: n
   return res.json();
 }
 
+export async function getDomainAnomalies(id: number, days = 30): Promise<{ days: number; domain: string; anomalies: import('./types').AnomalySource[] }> {
+  const res = await apiFetch(`/api/domains/${id}/anomalies?days=${days}`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function getCheckResults(): Promise<{ results: import('./types').CheckResult[] }> {
   const res = await apiFetch('/api/check-results');
   if (!res.ok) await throwApiError(res);

@@ -184,6 +184,8 @@ export interface AnomalySource {
   dkim_pass: number; // 1 if any record had dkim pass in window
   first_seen: string; // YYYY-MM-DD
   last_seen: string;  // YYYY-MM-DD
+  base_domain: string | null;
+  org: string | null;
 }
 
 export function getAnomalySources(db: D1Database, domainId: number, since: number) {
@@ -197,7 +199,9 @@ export function getAnomalySources(db: D1Database, domainId: number, since: numbe
       MAX(CASE WHEN rr.spf_result  = 'pass' THEN 1 ELSE 0 END) AS spf_pass,
       MAX(CASE WHEN rr.dkim_result = 'pass' THEN 1 ELSE 0 END) AS dkim_pass,
       MIN(date(datetime(ar.date_begin, 'unixepoch'))) AS first_seen,
-      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen
+      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen,
+      MAX(rr.base_domain) AS base_domain,
+      MAX(rr.org) AS org
     FROM report_records rr
     JOIN aggregate_reports ar ON ar.id = rr.report_id
     WHERE ar.domain_id = ?
@@ -219,7 +223,9 @@ export function getAllSources(db: D1Database, domainId: number, since: number) {
       MAX(CASE WHEN rr.spf_result  = 'pass' THEN 1 ELSE 0 END) AS spf_pass,
       MAX(CASE WHEN rr.dkim_result = 'pass' THEN 1 ELSE 0 END) AS dkim_pass,
       MIN(date(datetime(ar.date_begin, 'unixepoch'))) AS first_seen,
-      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen
+      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen,
+      MAX(rr.base_domain) AS base_domain,
+      MAX(rr.org) AS org
     FROM report_records rr
     JOIN aggregate_reports ar ON ar.id = rr.report_id
     WHERE ar.domain_id = ?

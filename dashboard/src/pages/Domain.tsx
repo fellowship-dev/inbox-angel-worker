@@ -211,6 +211,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         <div>
           <div style={s.sectionHeader}>
             <h3 style={s.sectionTitle}>Top failing sources</h3>
+            <a href={`#/domains/${id}/anomalies`} style={{ ...s.viewAll, marginRight: '0.75rem' }}>Anomalies →</a>
             <a href={`#/domains/${id}/explore`} style={s.viewAll}>Explore sources →</a>
           </div>
           {mobile ? (
