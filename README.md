@@ -132,7 +132,7 @@ Receiving mail servers → send XML aggregate reports → Cloudflare Email Worke
 | Outbound email | Cloudflare Email Workers | Sends digests and alerts |
 | Storage | Cloudflare D1 | SQLite at the edge |
 | DNS provisioning | Cloudflare DNS API | Provisions per-domain authorization records |
-| Auth | Email + password (self-hosted) / Auth0 (SaaS) | Set up on first visit; Auth0 pluggable via `AUTH0_DOMAIN` env var |
+| Auth | Email + password | Admin account created on first visit |
 | Frontend | Embedded SPA | Built from `dashboard/`, served as static assets |
 
 ---
@@ -197,7 +197,6 @@ Cloudflare dashboard → My Profile → API Tokens → delete the token you crea
 
 ## Related
 
-- [inbox-angel](https://github.com/Fellowship-dev/inbox-angel) — marketing site (Next.js, Vercel)
 - [RFC 7489](https://datatracker.ietf.org/doc/html/rfc7489) — DMARC specification
 - [Cloudflare Email Workers](https://developers.cloudflare.com/email-routing/email-workers/)
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)
