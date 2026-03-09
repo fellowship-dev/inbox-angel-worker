@@ -4,6 +4,7 @@ import { getActiveSubscriptions, updateSubscriptionBaseline } from './db/queries
 import { checkSubscription } from './monitor/check';
 import { sendChangeNotification } from './monitor/notify';
 import { sendWeeklyDigests } from './digest/weekly';
+import { ensureMigrated } from './db/migrate';
 
 export interface Env {
   DB: D1Database;
@@ -30,6 +31,7 @@ export interface Env {
 // HTTP API (dashboard calls, DNS provisioning)
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    await ensureMigrated(env.DB);
     const { pathname } = new URL(request.url);
     if (pathname === '/health' || pathname.startsWith('/api/')) {
       return handleApi(request, env, ctx);
@@ -39,11 +41,13 @@ export default {
 
   // Email Worker (inbound: free check + DMARC RUA reports)
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    await ensureMigrated(env.DB);
     await handleEmail(message, env, ctx);
   },
 
   // Cron dispatcher — routes by schedule expression
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    await ensureMigrated(env.DB);
     // Weekly digest — every Monday 9am UTC
     if (event.cron === '0 9 * * 1') {
       await sendWeeklyDigests(env);
