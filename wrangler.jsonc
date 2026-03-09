@@ -38,8 +38,8 @@
 	//      (runtime token = EMAIL token — deploy token is only needed locally/CI)
 	//
 	// 7. Set all secrets (run each, paste value when prompted):
-	//      wrangler secret put API_KEY              ← your chosen dashboard auth key
 	//      wrangler secret put CLOUDFLARE_API_TOKEN ← EMAIL token (from step above)
+	//      wrangler secret put CLOUDFLARE_ZONE_ID   ← your zone ID (dash → domain → Overview sidebar)
 	//      wrangler secret put REPORTS_DOMAIN       ← e.g. reports.yourdomain.com
 	//      wrangler secret put FROM_EMAIL           ← e.g. noreply@reports.yourdomain.com
 	//      wrangler secret put CUSTOMER_DOMAIN      ← your root domain (e.g. yourdomain.com)
@@ -106,22 +106,17 @@
 	},
 
 	// Environment variables — secrets go via: wrangler secret put <NAME>
-	// Secrets (never in vars): API_KEY, CLOUDFLARE_API_TOKEN (EMAIL token)
 	"vars": {
-		"AUTH0_DOMAIN": "",           // empty = bypass mode, use API_KEY header instead
-		"AUTH0_AUDIENCE": "",         // e.g. "https://api.yourdomain.com"
-		"CLOUDFLARE_ACCOUNT_ID": "YOUR_ACCOUNT_ID",  // same as account_id above
-		"CLOUDFLARE_ZONE_ID": "YOUR_ZONE_ID",        // dash.cloudflare.com → your domain → Overview
 		"WORKER_NAME": "inbox-angel-worker",  // must match the "name" field above
 		"TELEMETRY_ENABLED": "false",         // set to "true" to send anonymous usage stats
-		"DEBUG": "false"                      // set to "true" to enable verbose logs in CF Workers Logs (local only, nothing sent externally)
-		// Secrets (set via wrangler secret put):
-		//   API_KEY              — dashboard auth key
+		"DEBUG": "false"                      // set to "true" for verbose logs in CF Workers Logs
+		// Secrets (set via wrangler secret put, or via the deploy button):
 		//   CLOUDFLARE_API_TOKEN — EMAIL token (email routing + DNS writes)
-		//   REPORTS_DOMAIN       — e.g. reports.yourdomain.com
-		//   FROM_EMAIL           — e.g. noreply@reports.yourdomain.com
-		//   CUSTOMER_DOMAIN      — your domain (auto-provisions customer on first request)
-		//   CUSTOMER_EMAIL       — your email
-		//   CUSTOMER_NAME        — display name
+		//   CLOUDFLARE_ZONE_ID   — dash.cloudflare.com → your domain → Overview (sidebar)
+		//   REPORTS_DOMAIN       — subdomain for DMARC reports, e.g. reports.yourdomain.com
+		//   FROM_EMAIL           — sender address, e.g. noreply@reports.yourdomain.com
+		//   CUSTOMER_DOMAIN      — your domain (auto-provisions your account on first request)
+		//   CUSTOMER_EMAIL       — your email address
+		//   CUSTOMER_NAME        — your org display name
 	}
 }

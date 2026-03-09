@@ -9,20 +9,25 @@ import { ensureMigrated } from './db/migrate';
 export interface Env {
   DB: D1Database | undefined;
   ASSETS: Fetcher;
-  AUTH0_DOMAIN: string;         // empty = bypass mode (use X-Api-Key)
-  AUTH0_AUDIENCE: string;
-  AUTH0_ORG_CLAIM?: string;     // JWT claim for customer ID, default "org_id"
-  API_KEY?: string;             // bypass-mode API key (wrangler secret)
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  CLOUDFLARE_ZONE_ID?: string;
-  CLOUDFLARE_API_TOKEN?: string; // secret — optional; omit to provision DNS manually
-  WORKER_NAME?: string;          // defaults to "inbox-angel-worker"; used for email routing catch-all rule
-  TELEMETRY_ENABLED?: string;    // "true" to send anonymous usage events to InboxAngel (default: off)
-  DEBUG?: string;                // "true" to enable verbose logging to Cloudflare Workers Logs (default: off)
-  SEND_EMAIL?: SendEmail;        // CF Email Workers outbound binding — logs if unset (wrangler dev has no local support)
-  REPORTS_DOMAIN: string;        // e.g. "reports.inboxangel.io" — REQUIRED, no default
-  FROM_EMAIL: string;
-  // Self-hosted single-tenant init — set these before first deploy; auto-provisions on first request
+  // Auth (legacy JWT — leave empty to use email/password dashboard auth)
+  AUTH0_DOMAIN?: string;
+  AUTH0_AUDIENCE?: string;
+  AUTH0_ORG_CLAIM?: string;
+  API_KEY?: string;             // legacy bypass key — superseded by email/password auth
+  // Cloudflare (secrets — set via wrangler secret put)
+  CLOUDFLARE_API_TOKEN?: string; // EMAIL token: email routing + DNS writes
+  CLOUDFLARE_ZONE_ID?: string;   // your zone ID — required for DNS provisioning
+  CLOUDFLARE_ACCOUNT_ID?: string; // optional — used for anonymous telemetry ID
+  // Worker config (vars in wrangler.jsonc)
+  WORKER_NAME?: string;          // defaults to "inbox-angel-worker"
+  TELEMETRY_ENABLED?: string;    // "true" to send anonymous usage events (default: off)
+  DEBUG?: string;                // "true" for verbose CF Workers Logs (default: off)
+  // Bindings
+  SEND_EMAIL?: SendEmail;        // CF Email Workers outbound binding
+  // Secrets
+  REPORTS_DOMAIN?: string;       // e.g. "reports.yourdomain.com"
+  FROM_EMAIL?: string;           // e.g. "noreply@reports.yourdomain.com"
+  // Self-hosted single-tenant init — auto-provisions on first request
   CUSTOMER_DOMAIN?: string;      // e.g. "yourdomain.com"
   CUSTOMER_EMAIL?: string;       // alert and report recipient
   CUSTOMER_NAME?: string;        // display name (defaults to "Self-hosted")
@@ -104,6 +109,7 @@ function setupPage(): Response {
     <li>Copy the <code>database_id</code> from the output and paste it into <code>wrangler.jsonc</code> under <code>d1_databases[0].database_id</code>.</li>
     <li>Redeploy:<br><pre>npm run deploy</pre>The first request after redeploy will auto-migrate the schema — no extra step needed.</li>
     <li>Set your secrets:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN
+wrangler secret put CLOUDFLARE_ZONE_ID
 wrangler secret put REPORTS_DOMAIN
 wrangler secret put FROM_EMAIL
 wrangler secret put CUSTOMER_DOMAIN
