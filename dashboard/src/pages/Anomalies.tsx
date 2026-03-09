@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getDomainAnomalies } from '../api';
 import type { AnomalySource } from '../types';
+import { useIsMobile } from '../hooks';
 
 interface Props {
   domainId: number;
-  domainName?: string;
   onUnauthorized: () => void;
 }
 
@@ -33,18 +33,20 @@ function serviceVia(src: AnomalySource): string | null {
   return auth;
 }
 
-export function Anomalies({ domainId, domainName, onUnauthorized }: Props) {
+export function Anomalies({ domainId, onUnauthorized }: Props) {
   const [days, setDays] = useState(30);
   const [anomalies, setAnomalies] = useState<AnomalySource[]>([]);
+  const [domainName, setDomainName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const mobile = useIsMobile();
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     getDomainAnomalies(domainId, days)
-      .then(({ anomalies }) => { if (!cancelled) setAnomalies(anomalies); })
+      .then(({ anomalies, domain }) => { if (!cancelled) { setAnomalies(anomalies); setDomainName(domain); } })
       .catch((e) => {
         if (cancelled) return;
         if (e.message === '401') { onUnauthorized(); return; }
@@ -94,7 +96,7 @@ export function Anomalies({ domainId, domainName, onUnauthorized }: Props) {
               <h3 style={{ ...s.sectionTitle, color: '#dc2626' }}>
                 Active — {active.length} source{active.length !== 1 ? 's' : ''}
               </h3>
-              <SourceTable sources={active} domainId={domainId} />
+              <SourceTable sources={active} domainId={domainId} mobile={mobile} />
             </section>
           )}
 
@@ -104,7 +106,7 @@ export function Anomalies({ domainId, domainName, onUnauthorized }: Props) {
                 Older — {stale.length} source{stale.length !== 1 ? 's' : ''}
                 <span style={s.staleHint}> · not seen in 2+ days, may be resolved</span>
               </h3>
-              <SourceTable sources={stale} domainId={domainId} stale />
+              <SourceTable sources={stale} domainId={domainId} stale mobile={mobile} />
             </section>
           )}
         </>
@@ -113,7 +115,34 @@ export function Anomalies({ domainId, domainName, onUnauthorized }: Props) {
   );
 }
 
-function SourceTable({ sources, domainId, stale }: { sources: AnomalySource[]; domainId: number; stale?: boolean }) {
+function SourceTable({ sources, domainId, stale, mobile }: { sources: AnomalySource[]; domainId: number; stale?: boolean; mobile?: boolean }) {
+  const opacity = stale ? 0.55 : 1;
+  if (mobile) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {sources.map((src) => {
+          const via = serviceVia(src);
+          return (
+            <div key={`${src.source_ip}-${src.header_from}`} style={{ ...s.card, opacity }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                <a href={`#/domains/${domainId}/reports/${src.last_seen}`} style={{ textDecoration: 'none' }}>
+                  <code style={s.ip}>{src.source_ip}</code>
+                </a>
+                <span style={s.failBadge}>{failLabel(src)}</span>
+              </div>
+              {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
+              {src.header_from && <div style={s.sub}>{src.header_from}</div>}
+              {via && <div style={s.sub}>via {via}</div>}
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+                <span>{src.total.toLocaleString()} msg</span>
+                <span>{src.first_seen.slice(5)} – {src.last_seen.slice(5)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <table style={s.table}>
       <thead>
@@ -128,19 +157,13 @@ function SourceTable({ sources, domainId, stale }: { sources: AnomalySource[]; d
       <tbody>
         {sources.map((src) => {
           const via = serviceVia(src);
-          const rowOpacity = stale ? 0.55 : 1;
           return (
-            <tr key={`${src.source_ip}-${src.header_from}`} style={{ opacity: rowOpacity }}>
+            <tr key={`${src.source_ip}-${src.header_from}`} style={{ opacity }}>
               <td style={s.td}>
-                <a
-                  href={`#/domains/${domainId}/reports/${src.last_seen}`}
-                  style={s.ipLink}
-                >
+                <a href={`#/domains/${domainId}/reports/${src.last_seen}`} style={s.ipLink}>
                   <code style={s.ip}>{src.source_ip}</code>
                 </a>
-                {(src.org || src.base_domain) && (
-                  <div style={s.sub}>{src.org ?? src.base_domain}</div>
-                )}
+                {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
                 {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                 {via && <div style={s.sub}>via {via}</div>}
               </td>
@@ -188,5 +211,6 @@ const s = {
   emptyTitle: { fontWeight: 600, color: '#111827', marginBottom: '0.4rem' } as const,
   emptyHint: { fontSize: '0.875rem', color: '#9ca3af' } as const,
 
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '0.75rem 1rem' } as const,
   muted: { color: '#9ca3af' } as const,
 };
