@@ -163,7 +163,8 @@ export function getWeeklyDomainStats(db: D1Database, customerId: string, since: 
 
 export function getTopFailingSources(db: D1Database, domainId: number, since: number, limit = 5) {
   return db.prepare(`
-    SELECT rr.source_ip, SUM(rr.count) AS total, rr.header_from
+    SELECT rr.source_ip, SUM(rr.count) AS total, rr.header_from,
+           MAX(rr.base_domain) AS base_domain, MAX(rr.org) AS org
     FROM report_records rr
     JOIN aggregate_reports ar ON ar.id = rr.report_id
     WHERE ar.domain_id = ? AND ar.date_begin >= ?

@@ -122,6 +122,7 @@ export function Explore({ domainId, onUnauthorized }: Props) {
                       : <span style={s.failBadge}>{failLabel(src)} fail</span>
                     }
                   </div>
+                  {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
                   {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                   {via && <div style={s.sub}>via {via}</div>}
                   <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', fontSize: '0.75rem', color: '#9ca3af' }}>
@@ -156,6 +157,7 @@ export function Explore({ domainId, onUnauthorized }: Props) {
                       <a href={`#/domains/${domainId}/reports/${src.last_seen}`} style={s.ipLink}>
                         <code style={s.ip}>{src.source_ip}</code>
                       </a>
+                      {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
                       {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                       {via && <div style={s.sub}>via {via}</div>}
                     </td>

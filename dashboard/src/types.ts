@@ -32,6 +32,8 @@ export interface FailingSource {
   source_ip: string;
   total: number;
   header_from: string | null;
+  base_domain: string | null;
+  org: string | null;
 }
 
 export interface ReportSource {
@@ -44,6 +46,8 @@ export interface ReportSource {
   dkim_pass: number;
   disposition: string;
   reporters: string;
+  base_domain: string | null;
+  org: string | null;
 }
 
 export interface AnomalySource {

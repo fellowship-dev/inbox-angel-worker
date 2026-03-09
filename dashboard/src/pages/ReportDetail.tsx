@@ -108,6 +108,7 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
                   <div style={{ ...s.cardTop, flexWrap: 'wrap' }}>
                     <div style={s.cardLeft}>
                       <code style={s.ip}>{src.source_ip}</code>
+                      {(src.org || src.base_domain) && <span style={s.via}>{src.org ?? src.base_domain}</span>}
                       {via && <span style={s.via}>via {via}</span>}
                       {src.header_from && <span style={s.sendingAs}>sending as {src.header_from}</span>}
                     </div>
@@ -141,6 +142,7 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
                   <span style={s.passCheck}>✓</span>
                   <div style={{ ...s.passInfo, flexWrap: 'wrap' }}>
                     <code style={s.ip}>{src.source_ip}</code>
+                    {(src.org || src.base_domain) && <span style={s.via}>{src.org ?? src.base_domain}</span>}
                     {via && <span style={s.via}>via {via}</span>}
                   </div>
                   <span style={s.passCount}>{src.count.toLocaleString()} msg</span>

@@ -222,6 +222,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
                     <code style={s.code}>{src.source_ip}</code>
                     <span style={s.muted}>{src.total.toLocaleString()} msg</span>
                   </div>
+                  {(src.org || src.base_domain) && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.2rem' }}>{src.org ?? src.base_domain}</div>}
                   {src.header_from && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.2rem' }}>{src.header_from}</div>}
                 </div>
               ))}
@@ -238,7 +239,10 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
               <tbody>
                 {sources.map((src) => (
                   <tr key={src.source_ip}>
-                    <td style={s.td}><code style={s.code}>{src.source_ip}</code></td>
+                    <td style={s.td}>
+                      <code style={s.code}>{src.source_ip}</code>
+                      {(src.org || src.base_domain) && <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{src.org ?? src.base_domain}</div>}
+                    </td>
                     <td style={s.td}>{src.header_from ?? <span style={s.muted}>—</span>}</td>
                     <td style={{ ...s.td, textAlign: 'right' }}>{src.total.toLocaleString()}</td>
                   </tr>
