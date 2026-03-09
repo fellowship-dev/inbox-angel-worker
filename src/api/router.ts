@@ -40,6 +40,15 @@ import {
   setSetting,
   getMonitorSubsByDomain,
   setMonitorSubActive,
+  getUserByEmail,
+  getUserBySession,
+  getAllUsers,
+  insertUser,
+  setUserSession,
+  deleteUser,
+  getInvite,
+  insertInvite,
+  markInviteUsed,
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
 import type { DnsProvisionResult } from '../dns/provision';
@@ -421,23 +430,20 @@ export async function handleApi(
     return json({ domain: checkResult.from_domain, email: body.email }, 201);
   }
 
-  // GET /api/auth/status — is password auth configured? + prefill from env vars
+  // GET /api/auth/status — any admin configured? + env prefill
   if (path === '/api/auth/status' && method === 'GET') {
-    const configured = !!(await getSetting(env.DB!, 'password_hash'))?.value;
+    const admin = await env.DB!.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
     return json({
-      configured,
-      prefill: {
-        name: env.CUSTOMER_NAME?.trim() || '',
-        email: env.CUSTOMER_EMAIL?.trim() || '',
-      },
+      configured: !!admin,
+      prefill: { name: env.CUSTOMER_NAME?.trim() || '', email: env.CUSTOMER_EMAIL?.trim() || '' },
       telemetry_default: env.TELEMETRY_ENABLED === 'true',
     });
   }
 
-  // POST /api/auth/setup — first-time account creation (only works if not yet configured)
+  // POST /api/auth/setup — first-time admin creation (only if no users exist)
   if (path === '/api/auth/setup' && method === 'POST') {
-    const existing = await getSetting(env.DB!, 'password_hash');
-    if (existing) return err('already configured — use /api/auth/login', 409);
+    const admin = await env.DB!.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
+    if (admin) return err('already configured — use /api/auth/login', 409);
 
     const body = await parseBody<{ name?: string; email?: string; password?: string; telemetry?: boolean }>(request);
     if (!body.email || !body.password) return err('email and password are required', 400);
@@ -446,36 +452,64 @@ export async function handleApi(
 
     const hash = await hashPassword(body.password);
     const token = crypto.randomUUID();
+    const id = crypto.randomUUID();
+    const email = body.email.toLowerCase().trim();
 
-    await env.DB!.batch([
-      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('password_hash', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(hash),
-      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('user_email', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.email.toLowerCase().trim()),
-      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('user_name', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.name?.trim() || body.email),
-      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('session_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(token),
-      env.DB!.prepare(`INSERT INTO settings (key, value) VALUES ('telemetry_opted_in', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=unixepoch()`).bind(body.telemetry ? 'true' : 'false'),
-    ]);
+    await insertUser(env.DB!, { id, email, name: body.name?.trim() || email, password_hash: hash, role: 'admin' });
+    await setUserSession(env.DB!, id, token);
+    if (body.telemetry !== undefined) await setSetting(env.DB!, 'telemetry_opted_in', body.telemetry ? 'true' : 'false');
 
     return json({ token }, 201);
   }
 
-  // POST /api/auth/login — verify password + issue new session token
+  // POST /api/auth/login — verify password → new session token
   if (path === '/api/auth/login' && method === 'POST') {
     const body = await parseBody<{ email?: string; password?: string }>(request);
     if (!body.email || !body.password) return err('email and password are required', 400);
 
-    const [hashRow, emailRow] = await Promise.all([
-      getSetting(env.DB!, 'password_hash'),
-      getSetting(env.DB!, 'user_email'),
-    ]);
-    if (!hashRow || !emailRow) return err('not configured — complete setup first', 400);
-    if (emailRow.value !== body.email.toLowerCase().trim()) return err('invalid credentials', 401);
+    const user = await getUserByEmail(env.DB!, body.email.toLowerCase().trim());
+    if (!user || !user.password_hash) return err('invalid credentials', 401);
 
-    const valid = await verifyPassword(body.password, hashRow.value);
+    const valid = await verifyPassword(body.password, user.password_hash);
     if (!valid) return err('invalid credentials', 401);
 
     const token = crypto.randomUUID();
-    await setSetting(env.DB!, 'session_token', token);
+    await setUserSession(env.DB!, user.id, token);
     return json({ token });
+  }
+
+  // GET /api/invites/:token — get invite info (unauthenticated, for the accept page)
+  const inviteTokenMatch = path.match(/^\/api\/invites\/([^/]+)$/);
+  if (inviteTokenMatch && method === 'GET') {
+    const invite = await getInvite(env.DB!, inviteTokenMatch[1]);
+    if (!invite || invite.used_at || invite.expires_at < Math.floor(Date.now() / 1000)) {
+      return err('invite not found or expired', 404);
+    }
+    return json({ email: invite.email, invited_by: invite.invited_by, role: invite.role });
+  }
+
+  // POST /api/invites/:token/accept — set name+password, create user, return session
+  if (inviteTokenMatch && method === 'POST') {
+    const invite = await getInvite(env.DB!, inviteTokenMatch[1]);
+    if (!invite || invite.used_at || invite.expires_at < Math.floor(Date.now() / 1000)) {
+      return err('invite not found or expired', 404);
+    }
+    const body = await parseBody<{ name?: string; password?: string }>(request);
+    if (!body.name || !body.password) return err('name and password are required', 400);
+    if (body.password.length < 8) return err('password must be at least 8 characters', 400);
+
+    const existing = await getUserByEmail(env.DB!, invite.email);
+    if (existing) return err('an account with this email already exists', 409);
+
+    const hash = await hashPassword(body.password);
+    const token = crypto.randomUUID();
+    const id = crypto.randomUUID();
+
+    await insertUser(env.DB!, { id, email: invite.email, name: body.name.trim(), password_hash: hash, role: invite.role as 'admin' | 'member' });
+    await setUserSession(env.DB!, id, token);
+    await markInviteUsed(env.DB!, invite.token);
+
+    return json({ token }, 201);
   }
 
   // GET /api/init-key — returns the auto-generated API key (only when API_KEY env is not set)
@@ -501,13 +535,13 @@ export async function handleApi(
     return err('not found', 404);
   }
 
-  // Resolve effective API key: env secret → session token → legacy auto-key
+  // Resolve session: env API_KEY override → users table session → legacy auto-key
   const requestKey = request.headers.get('x-api-key') ?? '';
   let effectiveApiKey: string | undefined = env.API_KEY;
   if (!effectiveApiKey) {
-    const sessionToken = (await getSetting(env.DB!, 'session_token'))?.value;
-    if (sessionToken && requestKey === sessionToken) {
-      effectiveApiKey = sessionToken;
+    const userBySession = await getUserBySession(env.DB!, requestKey);
+    if (userBySession) {
+      effectiveApiKey = requestKey;
     } else {
       effectiveApiKey = (await getSetting(env.DB!, 'auto_api_key'))?.value;
     }
@@ -516,7 +550,7 @@ export async function handleApi(
   let customerId: string;
   try {
     const ctx = await requireAuth(request, { ...env, API_KEY: effectiveApiKey });
-    // In single-tenant mode use CUSTOMER_DOMAIN as stable ID regardless of key used
+    // In single-tenant mode use CUSTOMER_DOMAIN as stable ID regardless of session user
     customerId = (env.CUSTOMER_DOMAIN && !env.AUTH0_DOMAIN)
       ? env.CUSTOMER_DOMAIN
       : ctx.customerId;
@@ -601,6 +635,46 @@ export async function handleApi(
       const body = await parseBody<{ active?: boolean }>(request);
       if (typeof body.active !== 'boolean') return err('active (boolean) is required', 400);
       await setMonitorSubActive(env.DB, parseInt(monitorSubPatchMatch[1], 10), body.active);
+      return json({ ok: true });
+    }
+
+    // GET /api/team — list all users (admin only)
+    if (path === '/api/team' && method === 'GET') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const { results } = await getAllUsers(env.DB);
+      return json({ users: results });
+    }
+
+    // POST /api/team/invite — generate one-time invite link (admin only)
+    if (path === '/api/team/invite' && method === 'POST') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const body = await parseBody<{ email?: string; role?: string }>(request);
+      if (!body.email) return err('email is required', 400);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) return err('invalid email', 400);
+      const existing = await getUserByEmail(env.DB, body.email.toLowerCase().trim());
+      if (existing) return err('a user with this email already exists', 409);
+
+      const token = crypto.randomUUID();
+      const expiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 3600; // 7 days
+      await insertInvite(env.DB, {
+        token,
+        email: body.email.toLowerCase().trim(),
+        role: body.role === 'admin' ? 'admin' : 'member',
+        invited_by: actor.email,
+        expires_at: expiresAt,
+      });
+      return json({ token }, 201);
+    }
+
+    // DELETE /api/team/:id — remove a team member (admin only, can't remove self)
+    const teamMemberMatch = path.match(/^\/api\/team\/([^/]+)$/);
+    if (teamMemberMatch && method === 'DELETE') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      if (actor.id === teamMemberMatch[1]) return err('cannot remove yourself', 400);
+      await deleteUser(env.DB, teamMemberMatch[1]);
       return json({ ok: true });
     }
 

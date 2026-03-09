@@ -368,6 +368,70 @@ export function setMonitorSubActive(db: D1Database, id: number, active: boolean)
     .bind(active ? 1 : 0, id).run();
 }
 
+// ── Users ─────────────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string | null;
+  role: 'admin' | 'member';
+  session_token: string | null;
+  last_login_at: number | null;
+  created_at: number;
+}
+
+export function getUserByEmail(db: D1Database, email: string) {
+  return db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first<User>();
+}
+
+export function getUserBySession(db: D1Database, token: string) {
+  return db.prepare(`SELECT * FROM users WHERE session_token = ?`).bind(token).first<User>();
+}
+
+export function getAllUsers(db: D1Database) {
+  return db.prepare(`SELECT id, email, name, role, last_login_at, created_at FROM users ORDER BY created_at`).all<Omit<User, 'password_hash' | 'session_token'>>();
+}
+
+export function insertUser(db: D1Database, u: Pick<User, 'id' | 'email' | 'name' | 'password_hash' | 'role'>) {
+  return db.prepare(`INSERT INTO users (id, email, name, password_hash, role) VALUES (?, ?, ?, ?, ?)`)
+    .bind(u.id, u.email, u.name, u.password_hash, u.role).run();
+}
+
+export function setUserSession(db: D1Database, userId: string, token: string) {
+  return db.prepare(`UPDATE users SET session_token = ?, last_login_at = unixepoch() WHERE id = ?`)
+    .bind(token, userId).run();
+}
+
+export function deleteUser(db: D1Database, id: string) {
+  return db.prepare(`DELETE FROM users WHERE id = ?`).bind(id).run();
+}
+
+// ── Invites ───────────────────────────────────────────────────
+
+export interface Invite {
+  token: string;
+  email: string;
+  role: string;
+  invited_by: string;
+  created_at: number;
+  expires_at: number;
+  used_at: number | null;
+}
+
+export function getInvite(db: D1Database, token: string) {
+  return db.prepare(`SELECT * FROM invites WHERE token = ?`).bind(token).first<Invite>();
+}
+
+export function insertInvite(db: D1Database, inv: Pick<Invite, 'token' | 'email' | 'role' | 'invited_by' | 'expires_at'>) {
+  return db.prepare(`INSERT INTO invites (token, email, role, invited_by, expires_at) VALUES (?, ?, ?, ?, ?)`)
+    .bind(inv.token, inv.email, inv.role, inv.invited_by, inv.expires_at).run();
+}
+
+export function markInviteUsed(db: D1Database, token: string) {
+  return db.prepare(`UPDATE invites SET used_at = unixepoch() WHERE token = ?`).bind(token).run();
+}
+
 // ── Report Records ───────────────────────────────────────────
 
 export function insertReportRecords(db: D1Database, records: Omit<ReportRecord, 'id' | 'created_at'>[]) {

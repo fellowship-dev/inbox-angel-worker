@@ -7,6 +7,8 @@ import { ReportDetail } from './pages/ReportDetail';
 import { DomainSettings } from './pages/DomainSettings';
 import { Explore } from './pages/Explore';
 import { EmailCheck } from './pages/EmailCheck';
+import { Team } from './pages/Team';
+import { AcceptInvite } from './pages/AcceptInvite';
 import { AuthGate } from './AuthGate';
 import { getVersion, type VersionInfo } from './api';
 
@@ -44,8 +46,9 @@ function getRoute(): string {
   return window.location.hash.replace(/^#/, '') || '/';
 }
 
-function navActive(route: string, section: 'domains' | 'check'): boolean {
+function navActive(route: string, section: 'domains' | 'check' | 'team'): boolean {
   if (section === 'check') return route === '/check';
+  if (section === 'team') return route === '/team';
   return route === '/' || route === '/add' || route.startsWith('/domains/');
 }
 
@@ -54,6 +57,12 @@ export function App() {
   const [hasKey, setHasKey] = useState(() => !!localStorage.getItem('ia_api_key'));
   const [update, setUpdate] = useState<VersionInfo | null>(null);
   const handleUnauth = () => { localStorage.removeItem('ia_api_key'); setHasKey(false); };
+
+  // Invite route: must be handled before auth gate
+  const inviteMatch = route.match(/^\/invite\/(.+)$/);
+  if (inviteMatch) {
+    return <AcceptInvite token={inviteMatch[1]} onAccepted={() => setHasKey(true)} />;
+  }
 
   useEffect(() => {
     const onHash = () => setRoute(getRoute());
@@ -81,6 +90,9 @@ export function App() {
           <a href="#/check" style={{ ...styles.navLink, ...(navActive(route, 'check') ? styles.navLinkActive : {}) }}>
             {mobile ? 'Check' : 'Email check'}
           </a>
+          <a href="#/team" style={{ ...styles.navLink, ...(navActive(route, 'team') ? styles.navLinkActive : {}) }}>
+            Team
+          </a>
         </nav>
       </header>
       <main style={styles.main}>
@@ -93,6 +105,7 @@ export function App() {
         {route === '/' && <Overview onUnauthorized={handleUnauth} />}
         {route === '/add' && <AddDomain onUnauthorized={handleUnauth} />}
         {route === '/check' && <EmailCheck />}
+        {route === '/team' && <Team onUnauthorized={handleUnauth} />}
         {/^\/domains\/(\d+)$/.test(route) && !/\/settings$/.test(route) && (
           <DomainDetail id={parseInt(route.split('/')[2], 10)} onUnauthorized={handleUnauth} />
         )}
@@ -106,7 +119,7 @@ export function App() {
           const m = route.match(/^\/domains\/(\d+)\/reports\/(\d{4}-\d{2}-\d{2})$/);
           return m ? <ReportDetail domainId={parseInt(m[1], 10)} date={m[2]} onUnauthorized={handleUnauth} /> : null;
         })()}
-        {route !== '/' && route !== '/add' && route !== '/check' &&
+        {route !== '/' && route !== '/add' && route !== '/check' && route !== '/team' &&
          !/^\/domains\/\d+$/.test(route) &&
          !/^\/domains\/\d+\/settings$/.test(route) &&
          !/^\/domains\/\d+\/explore$/.test(route) &&

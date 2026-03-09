@@ -91,3 +91,35 @@ export async function setMonitorSubActive(subId: number, active: boolean): Promi
   });
   if (!res.ok) throw new Error(`${res.status}`);
 }
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+  last_login_at: number | null;
+  created_at: number;
+}
+
+export async function getTeam(): Promise<{ users: TeamMember[] }> {
+  const res = await apiFetch('/api/team');
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function inviteTeamMember(email: string): Promise<{ token: string }> {
+  const res = await apiFetch('/api/team/invite', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const data = await res.json() as { error?: string };
+    throw new Error(data.error ?? `${res.status}`);
+  }
+  return res.json();
+}
+
+export async function removeTeamMember(id: string): Promise<void> {
+  const res = await apiFetch(`/api/team/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
