@@ -19,6 +19,13 @@ export interface DomainStats {
   stats: DailyStat[];
 }
 
+export interface AddDomainResult {
+  domain: Domain;
+  rua_hint: string;
+  manual_dns?: boolean;
+  dns_instructions?: string;
+}
+
 export interface FailingSource {
   source_ip: string;
   total: number;

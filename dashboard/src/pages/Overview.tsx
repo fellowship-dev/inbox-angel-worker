@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useState, useCallback } from 'preact/hooks';
 import { getDomains, getDomainStats } from '../api';
 import type { Domain, DomainStats } from '../types';
+import { AddDomainModal } from '../components/AddDomainModal';
 
 type Status = 'good' | 'warning' | 'danger';
 
@@ -29,9 +30,15 @@ export function Overview({ onUnauthorized }: Props) {
   const [rows, setRows] = useState<DomainRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     async function load() {
       try {
@@ -71,7 +78,7 @@ export function Overview({ onUnauthorized }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [version]);
 
   const protected_ = rows.filter((r) => r.status === 'good').length;
   const needsAction = rows.filter((r) => r.status === 'danger').length;
@@ -85,6 +92,7 @@ export function Overview({ onUnauthorized }: Props) {
         {needsAction > 0 && (
           <span style={{ color: STATUS_COLOR.danger }}><strong>{needsAction}</strong> needs action</span>
         )}
+        <button style={styles.addBtn} onClick={() => setShowModal(true)}>+ Add domain</button>
       </div>
 
       {/* Domain list */}
@@ -92,14 +100,19 @@ export function Overview({ onUnauthorized }: Props) {
       {error && <p style={{ color: STATUS_COLOR.danger }}>{error === '401' ? 'Unauthorized — set your API key.' : `Error: ${error}`}</p>}
 
       {!loading && !error && rows.length === 0 && (
-        <p style={styles.muted}>No domains configured yet.</p>
+        <div style={styles.empty}>
+          <p style={{ margin: '0 0 1rem', color: '#6b7280' }}>No domains yet. Add your first one to start monitoring.</p>
+          <button style={styles.primaryBtn} onClick={() => setShowModal(true)}>Protect your first domain →</button>
+        </div>
       )}
 
       {rows.map(({ domain, passRate, status }) => (
         <div
           key={domain.id}
-          style={styles.row}
+          style={{ ...styles.row, background: hovered === domain.id ? '#f9fafb' : 'transparent' }}
           onClick={() => { window.location.hash = `#/domains/${domain.id}`; }}
+          onMouseEnter={() => setHovered(domain.id)}
+          onMouseLeave={() => setHovered(null)}
         >
           <span style={{ color: STATUS_COLOR[status], width: '1rem', flexShrink: 0 }}>
             {STATUS_ICON[status]}
@@ -114,6 +127,13 @@ export function Overview({ onUnauthorized }: Props) {
           <span style={styles.muted}>→</span>
         </div>
       ))}
+
+      {showModal && (
+        <AddDomainModal
+          onClose={() => setShowModal(false)}
+          onAdded={reload}
+        />
+      )}
     </div>
   );
 }
@@ -149,5 +169,30 @@ const styles = {
   muted: {
     color: '#9ca3af',
     fontSize: '0.875rem',
+  } as const,
+  addBtn: {
+    marginLeft: 'auto',
+    padding: '0.3rem 0.75rem',
+    background: '#111827',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+  } as const,
+  empty: {
+    padding: '3rem 0',
+    textAlign: 'center' as const,
+  },
+  primaryBtn: {
+    padding: '0.65rem 1.5rem',
+    background: '#111827',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.95rem',
+    fontWeight: 600,
+    cursor: 'pointer',
   } as const,
 };
