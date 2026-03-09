@@ -33,3 +33,20 @@ export async function getDomainSources(id: number, days = 7): Promise<{ sources:
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
+
+export async function getDomainReport(id: number, date: string): Promise<import('./types').DayReport> {
+  const res = await apiFetch(`/api/domains/${id}/reports?date=${date}`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function getDomainExplore(id: number, days = 30): Promise<{ days: number; sources: import('./types').AnomalySource[] }> {
+  const res = await apiFetch(`/api/domains/${id}/explore?days=${days}`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function deleteDomain(id: number): Promise<void> {
+  const res = await apiFetch(`/api/domains/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`${res.status}`);
+}

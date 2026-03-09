@@ -173,6 +173,61 @@ export function getTopFailingSources(db: D1Database, domainId: number, since: nu
   `).bind(domainId, since, limit).all<FailingSource>();
 }
 
+export interface AnomalySource {
+  source_ip: string;
+  header_from: string | null;
+  spf_domain: string | null;
+  dkim_domain: string | null;
+  total: number;
+  spf_pass: number;  // 1 if any record had spf pass in window
+  dkim_pass: number; // 1 if any record had dkim pass in window
+  first_seen: string; // YYYY-MM-DD
+  last_seen: string;  // YYYY-MM-DD
+}
+
+export function getAnomalySources(db: D1Database, domainId: number, since: number) {
+  return db.prepare(`
+    SELECT
+      rr.source_ip,
+      rr.header_from,
+      rr.spf_domain,
+      rr.dkim_domain,
+      SUM(rr.count) AS total,
+      MAX(CASE WHEN rr.spf_result  = 'pass' THEN 1 ELSE 0 END) AS spf_pass,
+      MAX(CASE WHEN rr.dkim_result = 'pass' THEN 1 ELSE 0 END) AS dkim_pass,
+      MIN(date(datetime(ar.date_begin, 'unixepoch'))) AS first_seen,
+      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen
+    FROM report_records rr
+    JOIN aggregate_reports ar ON ar.id = rr.report_id
+    WHERE ar.domain_id = ?
+      AND ar.date_begin >= ?
+      AND (rr.spf_result != 'pass' OR rr.dkim_result != 'pass')
+    GROUP BY rr.source_ip, rr.header_from, rr.spf_domain, rr.dkim_domain
+    ORDER BY total DESC
+  `).bind(domainId, since).all<AnomalySource>();
+}
+
+export function getAllSources(db: D1Database, domainId: number, since: number) {
+  return db.prepare(`
+    SELECT
+      rr.source_ip,
+      rr.header_from,
+      rr.spf_domain,
+      rr.dkim_domain,
+      SUM(rr.count) AS total,
+      MAX(CASE WHEN rr.spf_result  = 'pass' THEN 1 ELSE 0 END) AS spf_pass,
+      MAX(CASE WHEN rr.dkim_result = 'pass' THEN 1 ELSE 0 END) AS dkim_pass,
+      MIN(date(datetime(ar.date_begin, 'unixepoch'))) AS first_seen,
+      MAX(date(datetime(ar.date_begin, 'unixepoch'))) AS last_seen
+    FROM report_records rr
+    JOIN aggregate_reports ar ON ar.id = rr.report_id
+    WHERE ar.domain_id = ?
+      AND ar.date_begin >= ?
+    GROUP BY rr.source_ip, rr.header_from, rr.spf_domain, rr.dkim_domain
+    ORDER BY total DESC
+  `).bind(domainId, since).all<AnomalySource>();
+}
+
 export interface DailyDomainStat {
   day: string;
   total: number;
@@ -192,6 +247,100 @@ export function getDomainStats(db: D1Database, domainId: number, since: number) 
     GROUP BY day
     ORDER BY day ASC
   `).bind(domainId, since).all<DailyDomainStat>();
+}
+
+// ── Report Detail (per-date source breakdown) ─────────────────
+
+export interface ReportSource {
+  source_ip: string;
+  header_from: string | null;
+  spf_domain: string | null;
+  dkim_domain: string | null;
+  count: number;
+  spf_pass: number;  // 1 if any record had spf pass, else 0
+  dkim_pass: number; // 1 if any record had dkim pass, else 0
+  disposition: string;
+  reporters: string; // comma-separated org names
+}
+
+export interface DayReportSummary {
+  total: number;
+  passed: number;
+  failed: number;
+}
+
+export function getReportSourcesByDate(db: D1Database, domainId: number, date: string) {
+  return db.prepare(`
+    SELECT
+      rr.source_ip,
+      rr.header_from,
+      rr.spf_domain,
+      rr.dkim_domain,
+      SUM(rr.count) AS count,
+      MAX(CASE WHEN rr.spf_result  = 'pass' THEN 1 ELSE 0 END) AS spf_pass,
+      MAX(CASE WHEN rr.dkim_result = 'pass' THEN 1 ELSE 0 END) AS dkim_pass,
+      rr.disposition,
+      GROUP_CONCAT(DISTINCT ar.org_name) AS reporters
+    FROM report_records rr
+    JOIN aggregate_reports ar ON ar.id = rr.report_id
+    WHERE ar.domain_id = ?
+      AND date(datetime(ar.date_begin, 'unixepoch')) = ?
+    GROUP BY rr.source_ip, rr.header_from, rr.spf_domain, rr.dkim_domain, rr.disposition
+    ORDER BY count DESC
+  `).bind(domainId, date).all<ReportSource>();
+}
+
+export function getDayReportSummary(db: D1Database, domainId: number, date: string) {
+  return db.prepare(`
+    SELECT
+      COALESCE(SUM(total_count), 0) AS total,
+      COALESCE(SUM(pass_count),  0) AS passed,
+      COALESCE(SUM(fail_count),  0) AS failed
+    FROM aggregate_reports
+    WHERE domain_id = ?
+      AND date(datetime(date_begin, 'unixepoch')) = ?
+  `).bind(domainId, date).first<DayReportSummary>();
+}
+
+// ── Export ────────────────────────────────────────────────────
+
+export interface ExportRow {
+  date: string;
+  org_name: string;
+  total_count: number;
+  pass_count: number;
+  fail_count: number;
+  source_ip: string | null;
+  header_from: string | null;
+  spf_result: string | null;
+  spf_domain: string | null;
+  dkim_result: string | null;
+  dkim_domain: string | null;
+  record_count: number | null;
+  disposition: string | null;
+}
+
+export function getDomainExportData(db: D1Database, domainId: number) {
+  return db.prepare(`
+    SELECT
+      date(datetime(ar.date_begin, 'unixepoch')) AS date,
+      ar.org_name,
+      ar.total_count,
+      ar.pass_count,
+      ar.fail_count,
+      rr.source_ip,
+      rr.header_from,
+      rr.spf_result,
+      rr.spf_domain,
+      rr.dkim_result,
+      rr.dkim_domain,
+      rr.count AS record_count,
+      rr.disposition
+    FROM aggregate_reports ar
+    LEFT JOIN report_records rr ON rr.report_id = ar.id
+    WHERE ar.domain_id = ?
+    ORDER BY ar.date_begin DESC, rr.count DESC
+  `).bind(domainId).all<ExportRow>();
 }
 
 // ── Report Records ───────────────────────────────────────────

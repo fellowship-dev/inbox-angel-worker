@@ -1,6 +1,6 @@
 {
 	"name": "inbox-angel-worker",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"private": true,
 	"scripts": {
 		"deploy": "npm run build:dashboard && wrangler deploy",

@@ -139,6 +139,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
       <div style={s.header}>
         <h2 style={s.domainName}>{domain.domain}</h2>
         <span style={{ ...s.badge, color: POLICY_COLOR[policy] ?? '#6b7280' }}>{policy}</span>
+        <a href={`#/domains/${id}/settings`} style={s.settingsLink}>Settings</a>
       </div>
 
       {/* Summary numbers */}
@@ -174,14 +175,14 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
           const passW = (row.passed / maxTotal) * 100;
           const failW = (row.failed / maxTotal) * 100;
           return (
-            <div key={row.day} style={s.barRow}>
+            <a key={row.day} href={`#/domains/${id}/reports/${row.day}`} style={s.barRow}>
               <span style={s.dayLabel}>{row.day.slice(5)}</span>
               <div style={s.barTrack}>
                 <div style={{ ...s.barPass, width: `${passW}%` }} />
                 <div style={{ ...s.barFail, width: `${failW}%` }} />
               </div>
               <span style={s.barCount}>{row.total.toLocaleString()}</span>
-            </div>
+            </a>
           );
         })}
       </div>
@@ -203,7 +204,10 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
       {/* Failing sources */}
       {sources.length > 0 && (
         <div>
-          <h3 style={s.sectionTitle}>Top failing sources</h3>
+          <div style={s.sectionHeader}>
+            <h3 style={s.sectionTitle}>Top failing sources</h3>
+            <a href={`#/domains/${id}/explore`} style={s.viewAll}>Explore sources →</a>
+          </div>
           <table style={s.table}>
             <thead>
               <tr>
@@ -224,6 +228,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
           </table>
         </div>
       )}
+
     </div>
   );
 }
@@ -282,9 +287,11 @@ const s = {
     whiteSpace: 'nowrap' as const,
   },
 
-  sectionTitle: { fontSize: '0.875rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: '0.05em', margin: '0 0 1rem' },
+  sectionHeader: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1rem' } as const,
+  sectionTitle: { fontSize: '0.875rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: '0.05em', margin: 0 },
+  viewAll: { fontSize: '0.8rem', color: '#6b7280', textDecoration: 'none' } as const,
   bars: { display: 'flex', flexDirection: 'column' as const, gap: '0.5rem' },
-  barRow: { display: 'flex', alignItems: 'center', gap: '0.75rem' } as const,
+  barRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none', color: 'inherit', borderRadius: '4px', padding: '2px 4px', margin: '0 -4px' } as const,
   dayLabel: { width: '3rem', fontSize: '0.8rem', color: '#6b7280', flexShrink: 0 } as const,
   barTrack: { flex: 1, height: '8px', borderRadius: '4px', background: '#f3f4f6', overflow: 'hidden', display: 'flex' } as const,
   barPass: { height: '100%', background: '#16a34a', transition: 'width 0.3s' } as const,
@@ -299,4 +306,5 @@ const s = {
   th: { textAlign: 'left' as const, padding: '0.5rem 0.75rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
   td: { padding: '0.6rem 0.75rem', borderBottom: '1px solid #f3f4f6', color: '#374151' } as const,
   code: { fontFamily: 'monospace', fontSize: '0.8rem', color: '#111827' } as const,
+  settingsLink: { marginLeft: 'auto', fontSize: '0.8rem', color: '#6b7280', textDecoration: 'none' } as const,
 };

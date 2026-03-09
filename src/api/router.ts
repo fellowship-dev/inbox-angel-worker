@@ -31,6 +31,11 @@ import {
   upsertCustomer,
   getDomainStats,
   getTopFailingSources,
+  getReportSourcesByDate,
+  getDayReportSummary,
+  getDomainExportData,
+  getAnomalySources,
+  getAllSources,
 } from '../db/queries';
 import type { DnsProvisionResult } from '../dns/provision';
 import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
@@ -245,6 +250,50 @@ async function getDomainStatsSummary(env: Env, customerId: string, domainId: str
   return json({ domain: domain.domain, days, stats: results });
 }
 
+async function exportDomainData(env: Env, customerId: string, domainId: string): Promise<Response> {
+  const id = parseInt(domainId, 10);
+  if (isNaN(id)) return err('invalid domain id', 400);
+
+  const domain = await getDomainById(env.DB, id);
+  if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+
+  const { results } = await getDomainExportData(env.DB, id);
+
+  const header = 'date,org_name,total_count,pass_count,fail_count,source_ip,header_from,spf_result,spf_domain,dkim_result,dkim_domain,record_count,disposition\n';
+  const rows = results.map(r =>
+    [r.date, r.org_name, r.total_count, r.pass_count, r.fail_count,
+     r.source_ip ?? '', r.header_from ?? '', r.spf_result ?? '', r.spf_domain ?? '',
+     r.dkim_result ?? '', r.dkim_domain ?? '', r.record_count ?? '', r.disposition ?? '']
+    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+  ).join('\n');
+
+  const filename = `${domain.domain}-dmarc.csv`;
+  return new Response(header + rows, {
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+async function getDomainReportByDate(env: Env, customerId: string, domainId: string, url: URL): Promise<Response> {
+  const id = parseInt(domainId, 10);
+  if (isNaN(id)) return err('invalid domain id', 400);
+
+  const date = url.searchParams.get('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return err('date param required (YYYY-MM-DD)', 400);
+
+  const domain = await getDomainById(env.DB, id);
+  if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+
+  const [summary, { results: sources }] = await Promise.all([
+    getDayReportSummary(env.DB, id, date),
+    getReportSourcesByDate(env.DB, id, date),
+  ]);
+
+  return json({ date, summary: summary ?? { total: 0, passed: 0, failed: 0 }, sources });
+}
+
 async function getDomainSources(env: Env, customerId: string, domainId: string, url: URL): Promise<Response> {
   const id = parseInt(domainId, 10);
   if (isNaN(id)) return err('invalid domain id', 400);
@@ -314,6 +363,14 @@ export async function handleApi(
     return json({ domain: checkResult.from_domain, email: body.email }, 201);
   }
 
+  // GET /api/domains/:id/export — query-param auth for download links
+  const exportMatch = path.match(/^\/api\/domains\/([^/]+)\/export$/);
+  if (exportMatch && method === 'GET') {
+    const key = url.searchParams.get('key');
+    if (!key || !env.API_KEY || key !== env.API_KEY) return err('unauthorized', 401);
+    return await exportDomainData(env, key, exportMatch[1]);
+  }
+
   // All /api/* routes require auth
   if (!path.startsWith('/api/')) {
     return err('not found', 404);
@@ -345,10 +402,28 @@ export async function handleApi(
     if (domainStatsMatch && method === 'GET') {
       return await getDomainStatsSummary(env, customerId, domainStatsMatch[1], url);
     }
+    // GET /api/domains/:id/reports?date=YYYY-MM-DD
+    const domainReportsMatch = path.match(/^\/api\/domains\/([^/]+)\/reports$/);
+    if (domainReportsMatch && method === 'GET') {
+      return await getDomainReportByDate(env, customerId, domainReportsMatch[1], url);
+    }
     // GET /api/domains/:id/sources
     const domainSourcesMatch = path.match(/^\/api\/domains\/([^/]+)\/sources$/);
     if (domainSourcesMatch && method === 'GET') {
       return await getDomainSources(env, customerId, domainSourcesMatch[1], url);
+    }
+    // GET /api/domains/:id/explore?days=30
+    const exploreMatch = path.match(/^\/api\/domains\/([^/]+)\/explore$/);
+    if (exploreMatch && method === 'GET') {
+      const id = parseInt(exploreMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+      const rawDays = parseInt(url.searchParams.get('days') ?? '30', 10);
+      const days = Math.min(isNaN(rawDays) ? 30 : rawDays, 90);
+      const since = Math.floor(Date.now() / 1000) - days * 86400;
+      const { results } = await getAllSources(env.DB, id, since);
+      return json({ days, sources: results });
     }
     // DELETE /api/domains/:id
     const domainDeleteMatch = path.match(/^\/api\/domains\/([^/]+)$/);

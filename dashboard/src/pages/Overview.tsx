@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { getDomains, getDomainStats } from '../api';
 import type { Domain, DomainStats } from '../types';
-import { AddDomainModal } from '../components/AddDomainModal';
 
 type Status = 'good' | 'warning' | 'danger';
 
@@ -31,10 +30,6 @@ export function Overview({ onUnauthorized }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [version, setVersion] = useState(0);
-
-  const reload = useCallback(() => setVersion((v) => v + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +73,7 @@ export function Overview({ onUnauthorized }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [version]);
+  }, []);
 
   const protected_ = rows.filter((r) => r.status === 'good').length;
   const needsAction = rows.filter((r) => r.status === 'danger').length;
@@ -92,7 +87,7 @@ export function Overview({ onUnauthorized }: Props) {
         {needsAction > 0 && (
           <span style={{ color: STATUS_COLOR.danger }}><strong>{needsAction}</strong> needs action</span>
         )}
-        <button style={styles.addBtn} onClick={() => setShowModal(true)}>+ Add domain</button>
+        <a href="#/add" style={styles.addBtn}>+ Add domain</a>
       </div>
 
       {/* Domain list */}
@@ -102,7 +97,7 @@ export function Overview({ onUnauthorized }: Props) {
       {!loading && !error && rows.length === 0 && (
         <div style={styles.empty}>
           <p style={{ margin: '0 0 1rem', color: '#6b7280' }}>No domains yet. Add your first one to start monitoring.</p>
-          <button style={styles.primaryBtn} onClick={() => setShowModal(true)}>Protect your first domain →</button>
+          <a href="#/add" style={styles.primaryBtn}>Protect your first domain →</a>
         </div>
       )}
 
@@ -128,12 +123,6 @@ export function Overview({ onUnauthorized }: Props) {
         </div>
       ))}
 
-      {showModal && (
-        <AddDomainModal
-          onClose={() => setShowModal(false)}
-          onAdded={reload}
-        />
-      )}
     </div>
   );
 }
@@ -180,12 +169,14 @@ const styles = {
     fontSize: '0.8rem',
     fontWeight: 600,
     cursor: 'pointer',
+    textDecoration: 'none',
   } as const,
   empty: {
     padding: '3rem 0',
     textAlign: 'center' as const,
   },
   primaryBtn: {
+    display: 'inline-block',
     padding: '0.65rem 1.5rem',
     background: '#111827',
     color: '#fff',
@@ -194,5 +185,6 @@ const styles = {
     fontSize: '0.95rem',
     fontWeight: 600,
     cursor: 'pointer',
+    textDecoration: 'none',
   } as const,
 };

@@ -1,0 +1,229 @@
+import { useEffect, useState } from 'preact/hooks';
+import { getDomainReport } from '../api';
+import type { DayReport, ReportSource } from '../types';
+
+interface Props {
+  domainId: number;
+  date: string; // YYYY-MM-DD
+  onUnauthorized: () => void;
+}
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
+}
+
+// The sending service domain — different from header_from (their domain)
+// e.g. spf_domain = "sendgrid.net", header_from = "acme.com" → "via sendgrid.net"
+function serviceVia(src: ReportSource): string | null {
+  const auth = src.spf_domain || src.dkim_domain;
+  if (!auth || auth === src.header_from) return null;
+  return auth;
+}
+
+// Plain-language explanation — no jargon
+function explain(src: ReportSource): string {
+  const from = src.header_from ? `"${src.header_from}"` : 'your domain';
+  const via = serviceVia(src);
+  const service = via ? `${via}` : 'this server';
+
+  if (!src.spf_pass && !src.dkim_pass) {
+    return `${service} has no authorization to send as ${from}. ` +
+      `If you don't recognize it, it's likely spoofed mail — your DMARC policy will handle it. ` +
+      `If it's a service you added recently, you'll need to configure both SPF and DKIM for it.`;
+  }
+  if (!src.spf_pass) {
+    const fix = src.spf_domain ? `Add include:${src.spf_domain} to your SPF record.` : 'Add this server to your SPF record.';
+    return `${service} isn't listed in your SPF record but is sending as ${from}. ` +
+      `If this is a service you use (e.g. a newsletter tool or CRM), authorize it. ${fix}`;
+  }
+  // dkim fail
+  return `${service} sent mail without a valid DKIM signature for ${from}. ` +
+    `SPF is passing, but DKIM isn't — configure DKIM signing for this service to fully protect your domain.`;
+}
+
+export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
+  const [report, setReport] = useState<DayReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDomainReport(domainId, date)
+      .then((r) => { if (!cancelled) setReport(r); })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e.message === '401') { onUnauthorized(); return; }
+        setError(e.message ?? 'Failed to load');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [domainId, date]);
+
+  if (loading) return <p style={s.muted}>Loading…</p>;
+  if (error) return <p style={{ color: '#dc2626' }}>Error: {error}</p>;
+  if (!report) return null;
+
+  const { summary, sources } = report;
+  const failing = sources.filter((src) => !src.spf_pass || !src.dkim_pass);
+  const passing = sources.filter((src) => src.spf_pass && src.dkim_pass);
+
+  // Hero line (Postmark style)
+  let hero: string;
+  if (summary.total === 0) {
+    hero = 'No reports received for this date.';
+  } else if (failing.length === 0) {
+    hero = `${summary.total.toLocaleString()} messages analyzed — everything passed.`;
+  } else {
+    hero = `${summary.total.toLocaleString()} messages analyzed — ${summary.failed.toLocaleString()} need attention.`;
+  }
+
+  return (
+    <div>
+      <a href={`#/domains/${domainId}`} style={s.back}>← Back to domain</a>
+
+      <div style={s.pageHeader}>
+        <h2 style={s.title}>{formatDate(date)}</h2>
+        <p style={{ ...s.hero, color: failing.length > 0 ? '#dc2626' : '#16a34a' }}>{hero}</p>
+      </div>
+
+      {/* Summary numbers */}
+      {summary.total > 0 && (
+        <div style={s.summaryRow}>
+          <Stat label="Pass rate" value={`${Math.round((summary.passed / summary.total) * 100)}%`} accent={failing.length === 0} />
+          <Stat label="Total" value={summary.total.toLocaleString()} />
+          <Stat label="Passed" value={summary.passed.toLocaleString()} />
+          {summary.failed > 0 && <Stat label="Failed" value={summary.failed.toLocaleString()} danger />}
+        </div>
+      )}
+
+      {/* Failing source cards (EasyDMARC layout, Postmark language) */}
+      {failing.length > 0 && (
+        <section style={s.section}>
+          <h3 style={s.sectionTitle}>Needs attention</h3>
+          <div style={s.cardList}>
+            {failing.map((src) => {
+              const via = serviceVia(src);
+              return (
+                <div key={`${src.source_ip}-${src.header_from}`} style={s.failCard}>
+                  <div style={s.cardTop}>
+                    <div style={s.cardLeft}>
+                      <code style={s.ip}>{src.source_ip}</code>
+                      {via && <span style={s.via}>via {via}</span>}
+                      {src.header_from && <span style={s.sendingAs}>sending as {src.header_from}</span>}
+                    </div>
+                    <div style={s.cardRight}>
+                      <span style={s.msgCount}>{src.count.toLocaleString()}</span>
+                      <span style={s.msgLabel}>msg</span>
+                    </div>
+                  </div>
+                  <p style={s.cardExplain}>{explain(src)}</p>
+                  <div style={s.cardMeta}>
+                    <span style={s.spfBadge(!!src.spf_pass)}>SPF {src.spf_pass ? '✓' : '✗'}</span>
+                    <span style={s.dkimBadge(!!src.dkim_pass)}>DKIM {src.dkim_pass ? '✓' : '✗'}</span>
+                    {src.reporters && <span style={s.reporters}>Reported by {src.reporters}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Passing sources — compact list */}
+      {passing.length > 0 && (
+        <section style={s.section}>
+          <h3 style={s.sectionTitle}>Passing sources</h3>
+          <div style={s.passList}>
+            {passing.map((src) => {
+              const via = serviceVia(src);
+              return (
+                <div key={`${src.source_ip}-${src.header_from}`} style={s.passRow}>
+                  <span style={s.passCheck}>✓</span>
+                  <div style={s.passInfo}>
+                    <code style={s.ip}>{src.source_ip}</code>
+                    {via && <span style={s.via}>via {via}</span>}
+                  </div>
+                  <span style={s.passCount}>{src.count.toLocaleString()} msg</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value, accent, danger }: { label: string; value: string; accent?: boolean; danger?: boolean }) {
+  const color = danger ? '#dc2626' : accent ? '#16a34a' : '#111827';
+  return (
+    <div style={s.stat}>
+      <div style={{ ...s.statValue, color }}>{value}</div>
+      <div style={s.statLabel}>{label}</div>
+    </div>
+  );
+}
+
+const s = {
+  back: { fontSize: '0.875rem', color: '#6b7280', textDecoration: 'none', display: 'inline-block', marginBottom: '1.5rem' } as const,
+  pageHeader: { marginBottom: '1.5rem' },
+  title: { margin: '0 0 0.4rem', fontSize: '1.5rem', fontWeight: 700 },
+  hero: { margin: 0, fontSize: '1rem', fontWeight: 500 } as const,
+
+  summaryRow: { display: 'flex', gap: '2rem', padding: '1.25rem 0', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', marginBottom: '2rem' } as const,
+  stat: { display: 'flex', flexDirection: 'column' as const, gap: '0.2rem' },
+  statValue: { fontSize: '1.4rem', fontWeight: 700 },
+  statLabel: { fontSize: '0.7rem', color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
+
+  section: { marginBottom: '2rem' },
+  sectionTitle: { fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 0.75rem' },
+
+  // Failing cards
+  cardList: { display: 'flex', flexDirection: 'column' as const, gap: '0.75rem' },
+  failCard: {
+    border: '1px solid #fca5a5',
+    borderLeft: '3px solid #dc2626',
+    borderRadius: '6px',
+    padding: '1rem 1.1rem',
+    background: '#fff',
+  } as const,
+  cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem' } as const,
+  cardLeft: { display: 'flex', flexDirection: 'column' as const, gap: '0.2rem' },
+  cardRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', flexShrink: 0, paddingLeft: '1rem' },
+  ip: { fontFamily: 'monospace', fontSize: '0.875rem', color: '#111827' } as const,
+  via: { fontSize: '0.75rem', color: '#6b7280' } as const,
+  sendingAs: { fontSize: '0.75rem', color: '#9ca3af' } as const,
+  msgCount: { fontSize: '1.25rem', fontWeight: 700, color: '#111827', lineHeight: 1 } as const,
+  msgLabel: { fontSize: '0.7rem', color: '#9ca3af' } as const,
+  cardExplain: { margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#374151', lineHeight: 1.6 } as const,
+  cardMeta: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' as const },
+  spfBadge: (pass: boolean) => ({
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    padding: '0.1rem 0.45rem',
+    borderRadius: '4px',
+    background: pass ? '#dcfce7' : '#fee2e2',
+    color: pass ? '#16a34a' : '#dc2626',
+  }),
+  dkimBadge: (pass: boolean) => ({
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    padding: '0.1rem 0.45rem',
+    borderRadius: '4px',
+    background: pass ? '#dcfce7' : '#fee2e2',
+    color: pass ? '#16a34a' : '#dc2626',
+  }),
+  reporters: { fontSize: '0.75rem', color: '#9ca3af', marginLeft: 'auto' } as const,
+
+  // Passing compact list
+  passList: { display: 'flex', flexDirection: 'column' as const, gap: '0' },
+  passRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6' } as const,
+  passCheck: { color: '#16a34a', fontWeight: 700, fontSize: '0.875rem', flexShrink: 0 } as const,
+  passInfo: { display: 'flex', alignItems: 'baseline', gap: '0.5rem', flex: 1 } as const,
+  passCount: { fontSize: '0.8rem', color: '#9ca3af', flexShrink: 0 } as const,
+
+  muted: { color: '#9ca3af' } as const,
+};

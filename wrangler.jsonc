@@ -9,28 +9,39 @@
 	// 6. Set CUSTOMER_DOMAIN, CUSTOMER_EMAIL, CUSTOMER_NAME below
 	//    (auto-provisioned on first authenticated request — no API call needed)
 	//
-	// ── Token A: Deploy token (wrangler deploy + D1 migrations) ────────────────
+	// ── DEPLOY token (wrangler deploy + D1 migrations) ─────────────────────────
 	//    Create at: dash.cloudflare.com → My Profile → API Tokens
-	//      • Account / Account Settings : Read   ← lets wrangler skip /memberships if account_id is set
-	//      • Account / Workers Scripts  : Edit
-	//      • Account / D1               : Edit
-	//      • Zone / Workers Routes      : Edit   ← only needed if deploying to a custom domain (not workers.dev)
-	//    Set it: export CLOUDFLARE_API_TOKEN=<token>
+	//    Account scope (Fellowship.dev):
+	//      • Account Settings : Read   ← lets wrangler skip /memberships lookup
+	//      • Workers Scripts  : Edit
+	//      • D1               : Edit
+	//    Zone scope (All zones):
+	//      • Workers Routes   : Edit   ← required for custom domain route
+	//    Set it: export CLOUDFLARE_API_TOKEN=<deploy-token>
 	//
-	// ── Token B: Zone token (email routing + DNS provisioning, one per zone) ───
-	//    Create at: same place, scoped to your REPORTS_DOMAIN zone
-	//      • Zone / Zone          : Read
-	//      • Zone / DNS           : Edit         ← MX records for subdomain + per-customer TXT records
-	//      • Zone / Email Routing : Edit         ← enable routing, set catch-all rule
-	//    Run once: npx tsx scripts/setup-email-routing.ts  (uses CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID)
+	// ── EMAIL token (email routing + DNS provisioning + runtime DNS writes) ─────
+	//    Create at: same place
+	//    Account scope (Fellowship.dev):
+	//      • Account Settings : Read
+	//      • Email Sending    : Edit   ← send from Email Workers
+	//    Zone scope (All zones):
+	//      • Email Routing Rules : Edit  ← enable routing, set catch-all rule
+	//      • DNS                 : Edit  ← MX records for subdomain + per-customer TXT records
+	//      • Workers Routes      : Edit
+	//    Run once: npx tsx scripts/setup-email-routing.ts  (uses CLOUDFLARE_EMAIL_TOKEN + CLOUDFLARE_ZONE_ID)
 	//      → enables Email Routing on the zone
 	//      → adds MX records for REPORTS_DOMAIN subdomain
 	//      → sets catch-all rule: *@REPORTS_DOMAIN → this Worker
 	//    Then store as runtime secret: wrangler secret put CLOUDFLARE_API_TOKEN
-	//      (yes, same env var name — deploy token is only needed locally/CI, runtime token lives in Worker)
+	//      (runtime token = EMAIL token — deploy token is only needed locally/CI)
 	//
 	// 7. Run: wrangler secret put API_KEY  (your chosen dashboard auth key)
-	// 8. wrangler d1 migrations apply <your-db-name> --remote && wrangler deploy
+	// 8. Create workers.dev subdomain (required for cron scheduling — no dashboard visit needed):
+	//      curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/<account_id>/workers/subdomain" \
+	//        -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+	//        -H "Content-Type: application/json" \
+	//        -d '{"subdomain":"<your-chosen-name>"}'
+	// 9. wrangler d1 migrations apply <your-db-name> --remote && wrangler deploy
 	// ───────────────────────────────────────────────────────────────────────────
 
 	"name": "inbox-angel-worker",
