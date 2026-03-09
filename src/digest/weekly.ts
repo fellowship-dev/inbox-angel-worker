@@ -5,6 +5,21 @@
 // Delivery: Resend API if RESEND_API_KEY is set, console.log otherwise.
 
 import { getAllCustomers, getWeeklyDomainStats, getTopFailingSources, DomainWeeklyStat, FailingSource } from '../db/queries';
+import { version } from '../../package.json';
+
+const GH_RAW = 'https://raw.githubusercontent.com/Fellowship-dev/inbox-angel-worker/main/package.json';
+const RELEASE_URL = 'https://github.com/Fellowship-dev/inbox-angel-worker/releases/latest';
+
+async function fetchLatestVersion(): Promise<string | null> {
+  try {
+    const res = await fetch(GH_RAW);
+    if (!res.ok) return null;
+    const pkg = await res.json() as { version: string };
+    return pkg.version ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export interface DigestEnv {
   DB: D1Database;
@@ -64,6 +79,7 @@ export function buildDigestBody(
   weekLabel: string,
   ruaAddress: string,
   reportsDomain: string,
+  latestVersion: string | null = null,
 ): string {
   const lines: string[] = [
     `Hi ${customerName},`,
@@ -82,6 +98,13 @@ export function buildDigestBody(
   if (weak.length > 0) {
     lines.push(`${weak.map(s => s.domain).join(', ')} ${weak.length === 1 ? 'is' : 'are'} not enforcing DMARC.`);
     lines.push(`Want us to fix it for you? Visit https://${reportsDomain.replace(/^reports\./, '')}`);
+    lines.push('');
+  }
+
+  if (latestVersion && latestVersion !== version) {
+    lines.push('─────────────────────────────');
+    lines.push(`📦 Update available: v${latestVersion} (you're on v${version})`);
+    lines.push(`${RELEASE_URL}`);
     lines.push('');
   }
 
@@ -133,6 +156,11 @@ export async function sendWeeklyDigests(env: DigestEnv, now = Date.now()): Promi
   });
   const ruaAddress = `rua@${env.REPORTS_DOMAIN}`;
 
+  const latestVersion = await fetchLatestVersion();
+  if (latestVersion && latestVersion !== version) {
+    console.log(`[digest] update available: v${latestVersion} (running v${version})`);
+  }
+
   const { results: customers } = await getAllCustomers(env.DB);
   console.log(`[digest] sending weekly digest to ${customers.length} customer(s)`);
 
@@ -150,7 +178,7 @@ export async function sendWeeklyDigests(env: DigestEnv, now = Date.now()): Promi
         }
       }
 
-      const body = buildDigestBody(customer.name, stats, sourcesByDomain, weekLabel, ruaAddress, env.REPORTS_DOMAIN);
+      const body = buildDigestBody(customer.name, stats, sourcesByDomain, weekLabel, ruaAddress, env.REPORTS_DOMAIN, latestVersion);
       const hasIssues = stats.some(s => s.fail_messages > 0 || !s.dmarc_policy || s.dmarc_policy === 'none');
       const subject = hasIssues
         ? `⚠️ DMARC Weekly Digest — action needed`

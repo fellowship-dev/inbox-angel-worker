@@ -1,6 +1,6 @@
 {
 	"name": "inbox-angel-worker",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"private": true,
 	"scripts": {
 		"predeploy": "wrangler d1 migrations apply DB --remote",
