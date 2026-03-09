@@ -186,6 +186,20 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         })}
       </div>
 
+      {/* RUA config */}
+      <div style={s.ruaBox}>
+        <div style={s.ruaLabel}>RUA reporting address</div>
+        <div style={s.dnsRow}>
+          <code style={s.dnsCode}>rua=mailto:{domain.rua_address}</code>
+          <button style={s.copyBtn} onClick={() => copy(`rua=mailto:${domain.rua_address}`)}>
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+        <p style={s.ruaHint}>
+          Add this to your <code style={s.inlineCode}>_dmarc.{domain.domain}</code> TXT record so receiving servers send DMARC reports here.
+        </p>
+      </div>
+
       {/* Failing sources */}
       {sources.length > 0 && (
         <div>
@@ -276,6 +290,10 @@ const s = {
   barPass: { height: '100%', background: '#16a34a', transition: 'width 0.3s' } as const,
   barFail: { height: '100%', background: '#dc2626', transition: 'width 0.3s' } as const,
   barCount: { width: '4rem', fontSize: '0.8rem', color: '#9ca3af', textAlign: 'right' as const, flexShrink: 0 },
+  ruaBox: { padding: '1rem 1.25rem', border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '2rem' } as const,
+  ruaLabel: { fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: '0.5rem' },
+  ruaHint: { margin: '0.5rem 0 0', fontSize: '0.8rem', color: '#9ca3af', lineHeight: 1.5 } as const,
+  inlineCode: { fontFamily: 'monospace', fontSize: '0.8rem', color: '#374151' } as const,
   muted: { color: '#9ca3af' } as const,
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.875rem' },
   th: { textAlign: 'left' as const, padding: '0.5rem 0.75rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
