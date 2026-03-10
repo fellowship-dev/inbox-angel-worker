@@ -10,6 +10,7 @@ export interface SpfRecord {
   raw: string;
   mechanisms: string[];  // e.g. ["ip4:1.2.3.4", "include:sendgrid.net", "~all"]
   verdict: 'strict' | 'soft' | 'open' | 'missing';
+  lookup_count: number;  // total DNS lookups required to evaluate this record
 }
 
 export interface DkimRecord {
@@ -72,10 +73,43 @@ export function parseSpfRecord(raw: string): SpfRecord {
   return { raw, mechanisms, verdict };
 }
 
+// Walk the SPF include chain and count DNS lookups.
+// Mechanisms that count toward the 10-lookup limit: include, a, mx, ptr, exists, redirect.
+// ip4, ip6, all, exp do NOT count.
+async function walkSpfLookups(domain: string, visited = new Set<string>(), count = { n: 0 }): Promise<number> {
+  if (visited.has(domain) || count.n > 10) return count.n;
+  visited.add(domain);
+
+  const records = await queryTxt(domain);
+  const spfRaw = records.find(r => r.startsWith('v=spf1'));
+  if (!spfRaw) return count.n;
+
+  for (const token of spfRaw.split(/\s+/)) {
+    const t = token.toLowerCase();
+    if (t.startsWith('include:')) {
+      count.n++;
+      await walkSpfLookups(t.slice(8), visited, count);
+    } else if (t.startsWith('redirect=')) {
+      count.n++;
+      await walkSpfLookups(t.slice(9), visited, count);
+    } else if (t === 'a' || t.startsWith('a:') || t.startsWith('a/') ||
+               t === 'mx' || t.startsWith('mx:') || t.startsWith('mx/') ||
+               t === 'ptr' || t.startsWith('ptr:') ||
+               t.startsWith('exists:')) {
+      count.n++;
+    }
+    if (count.n > 10) break;
+  }
+  return count.n;
+}
+
 export async function lookupSpf(domain: string): Promise<SpfRecord | null> {
   const records = await queryTxt(domain);
   const spfRaw = records.find(r => r.startsWith('v=spf1'));
-  return spfRaw ? parseSpfRecord(spfRaw) : null;
+  if (!spfRaw) return null;
+  const parsed = parseSpfRecord(spfRaw);
+  const lookup_count = await walkSpfLookups(domain);
+  return { ...parsed, lookup_count };
 }
 
 // ── DKIM ─────────────────────────────────────────────────────

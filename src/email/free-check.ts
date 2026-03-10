@@ -70,6 +70,7 @@ export async function handleFreeCheck(
       spf_result: (auth?.spf?.result ?? null) as any,
       spf_domain: auth?.spf?.domain ?? null,
       spf_record: dns.spf?.raw ?? null,
+      spf_lookup_count: dns.spf?.lookup_count ?? null,
       dkim_result: (auth?.dkim?.result ?? null) as any,
       dkim_domain: auth?.dkim?.domain ?? null,
       dmarc_result: (auth?.dmarc?.result ?? null) as any,

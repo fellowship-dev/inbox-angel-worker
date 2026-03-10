@@ -47,11 +47,12 @@ function PassFail({ val, label }: { val: string | null; label: string }) {
   );
 }
 
-function ProtocolCard({ title, result, record, domain, children }: {
+function ProtocolCard({ title, result, record, domain, badge, children }: {
   title: string;
   result: string | null;
   record?: string | null;
   domain?: string | null;
+  badge?: preact.VNode | null;
   children: preact.ComponentChildren;
 }) {
   const pass = result === 'pass';
@@ -65,7 +66,7 @@ function ProtocolCard({ title, result, record, domain, children }: {
       marginBottom: '0.75rem',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{title}</span>
+        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{title}{badge}</span>
         <span style={{
           fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px',
           borderRadius: '9999px',
@@ -91,9 +92,28 @@ function ProtocolCard({ title, result, record, domain, children }: {
   );
 }
 
-function spfAdvice(result: string | null, record: string | null): string {
+function spfLookupBadge(count: number | null): preact.VNode | null {
+  if (count === null) return null;
+  const color = count >= 10 ? '#b91c1c' : count >= 8 ? '#92400e' : '#15803d';
+  const bg    = count >= 10 ? '#fee2e2' : count >= 8 ? '#fef3c7' : '#dcfce7';
+  const warn  = count >= 10 ? '⚠ ' : count >= 8 ? '⚠ ' : '';
+  return (
+    <span style={{
+      display: 'inline-block', marginLeft: '0.5rem',
+      padding: '1px 7px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
+      color, background: bg,
+    }}>
+      {warn}{count}/10 lookups
+    </span>
+  );
+}
+
+function spfAdvice(result: string | null, record: string | null, lookupCount: number | null): string {
   if (!result || result === 'none') return 'No SPF record found. Add a TXT record to your DNS: v=spf1 include:your-mail-provider.com ~all';
-  if (result === 'pass') return 'SPF passed — the sending server is authorized by your DNS record.';
+  if (result === 'permerror') return `SPF permerror — your record requires ${lookupCount ?? '?'} DNS lookups, exceeding the 10-lookup limit. Receivers treat this as a fail. Flatten your SPF record or use a dynamic SPF service.`;
+  if (lookupCount !== null && lookupCount >= 10) return `SPF passed this time, but your record needs ${lookupCount} DNS lookups — at or over the limit. Some receivers will return permerror and silently drop your mail. Flatten your includes or use a dynamic SPF service.`;
+  if (lookupCount !== null && lookupCount >= 8) return `SPF passed. Your record uses ${lookupCount}/10 lookups — close to the limit. Adding another mail provider could break SPF delivery.`;
+  if (result === 'pass') return `SPF passed — the sending server is authorized by your DNS record.${lookupCount !== null ? ` Uses ${lookupCount}/10 DNS lookups.` : ''}`;
   if (result === 'softfail') return 'SPF soft-failed (~all). Consider tightening to -all once you\'ve verified all senders.';
   if (result === 'fail') return 'SPF hard-failed. The sending server is not listed in your SPF record. Check you\'ve included all mail providers.';
   return `SPF returned "${result}". Review your SPF record for syntax errors or missing includes.`;
@@ -150,8 +170,8 @@ function CheckReport({ result, onReset }: { result: CheckResult; onReset: () => 
         <PassFail val={result.dmarc_result} label="DMARC" />
       </div>
 
-      <ProtocolCard title="SPF" result={result.spf_result} record={result.spf_record} domain={result.spf_domain}>
-        {spfAdvice(result.spf_result, result.spf_record)}
+      <ProtocolCard title="SPF" result={result.spf_result} record={result.spf_record} domain={result.spf_domain} badge={spfLookupBadge(result.spf_lookup_count)}>
+        {spfAdvice(result.spf_result, result.spf_record, result.spf_lookup_count)}
       </ProtocolCard>
       <ProtocolCard title="DKIM" result={result.dkim_result} domain={result.dkim_domain}>
         {dkimAdvice(result.dkim_result)}
@@ -247,8 +267,8 @@ function HistoryRow({ r, expanded, onToggle }: {
           paddingBottom: '1.25rem', paddingLeft: mobile ? 0 : '0.5rem',
           borderTop: '1px solid #f9fafb',
         }}>
-          <ProtocolCard title="SPF" result={r.spf_result} record={r.spf_record} domain={r.spf_domain}>
-            {spfAdvice(r.spf_result, r.spf_record)}
+          <ProtocolCard title="SPF" result={r.spf_result} record={r.spf_record} domain={r.spf_domain} badge={spfLookupBadge(r.spf_lookup_count)}>
+            {spfAdvice(r.spf_result, r.spf_record, r.spf_lookup_count)}
           </ProtocolCard>
           <ProtocolCard title="DKIM" result={r.dkim_result} domain={r.dkim_domain}>
             {dkimAdvice(r.dkim_result)}

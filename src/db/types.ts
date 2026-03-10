@@ -47,6 +47,7 @@ export interface CheckResult {
   overall_status: OverallStatus;
   report_sent: 0 | 1;
   session_token: string | null;
+  spf_lookup_count: number | null;
   created_at: number;
 }
 

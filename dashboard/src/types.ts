@@ -78,6 +78,7 @@ export interface CheckResult {
   dmarc_record: string | null;
   overall_status: 'protected' | 'at_risk' | 'exposed';
   session_token: string | null;
+  spf_lookup_count: number | null;
   created_at: number;
 }
 

@@ -53,12 +53,13 @@ export function insertCheckResult(db: D1Database, r: Omit<CheckResult, 'id' | 'c
     INSERT INTO check_results
       (from_email, from_domain, spf_result, spf_domain, spf_record,
        dkim_result, dkim_domain, dmarc_result, dmarc_policy, dmarc_record,
-       overall_status, report_sent, session_token)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       overall_status, report_sent, session_token, spf_lookup_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     r.from_email, r.from_domain, r.spf_result, r.spf_domain, r.spf_record,
     r.dkim_result, r.dkim_domain, r.dmarc_result, r.dmarc_policy, r.dmarc_record,
-    r.overall_status, r.report_sent, r.session_token ?? null
+    r.overall_status, r.report_sent, r.session_token ?? null,
+    r.spf_lookup_count ?? null
   ).run();
 }
 

@@ -207,6 +207,11 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       ALTER TABLE report_records ADD COLUMN org TEXT;
     `,
 	},
+	{
+		// SPF lookup count — track DNS lookup depth for permerror risk detection
+		version: 11,
+		sql: `ALTER TABLE check_results ADD COLUMN spf_lookup_count INTEGER;`,
+	},
 ];
 
 let migrated = false;
