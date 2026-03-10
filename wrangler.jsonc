@@ -91,11 +91,11 @@
 		}
 	],
 
-	// Custom domain route — remove this block if using workers.dev subdomain instead
+	// Custom domain route — optional, add if you want a vanity URL instead of workers.dev
 	// Requires your deploy token to have Zone / Workers Routes : Edit
-	"routes": [
-		{ "pattern": "your-worker-name.yourdomain.com/*", "zone_name": "yourdomain.com" }
-	],
+	// "routes": [
+	// 	{ "pattern": "mail.yourdomain.com/*", "zone_name": "yourdomain.com" }
+	// ],
 
 	// Crons:
 	//   0 8 * * *  — daily DNS monitor check
