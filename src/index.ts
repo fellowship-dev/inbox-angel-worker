@@ -30,8 +30,6 @@ export interface Env {
   SEND_EMAIL?: SendEmail;        // CF Email Workers outbound binding
   // Self-hosted single-tenant init — auto-provisions on first request
   BASE_DOMAIN?: string;          // e.g. "yourdomain.com" — required
-  CUSTOMER_EMAIL?: string;       // alert/digest recipient (optional)
-  CUSTOMER_NAME?: string;        // display name (optional, defaults to "Self-hosted")
   // Optional overrides — derived from BASE_DOMAIN when not set
   REPORTS_DOMAIN?: string;       // defaults to "reports.<BASE_DOMAIN>"
   FROM_EMAIL?: string;           // defaults to "noreply@reports.<BASE_DOMAIN>"

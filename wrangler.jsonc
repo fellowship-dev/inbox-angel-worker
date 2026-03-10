@@ -113,8 +113,6 @@
 		"BASE_DOMAIN": ""                     // required — e.g. "yourdomain.com"
 		// Required secret: CLOUDFLARE_API_TOKEN (see README for token permissions)
 		// Optional overrides (wrangler secret put <NAME>):
-		//   CUSTOMER_EMAIL  — alert recipient (defaults to noreply@reports.<BASE_DOMAIN>)
-		//   CUSTOMER_NAME   — display name (defaults to "Self-hosted")
 		//   REPORTS_DOMAIN  — override reports subdomain (defaults to reports.<BASE_DOMAIN>)
 		//   FROM_EMAIL      — override sender address
 	}

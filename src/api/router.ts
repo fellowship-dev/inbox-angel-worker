@@ -207,7 +207,7 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
   track(env, 'domain.add'); // fire-and-forget, non-blocking
 
   // Auto-subscribe the adding user to monitoring alerts
-  const email = userEmail ?? env.CUSTOMER_EMAIL;
+  const email = userEmail;
   if (email) {
     await insertMonitorSubscription(env.DB, {
       email: email.toLowerCase().trim(),
@@ -319,10 +319,12 @@ async function ensureCustomerExists(env: Env, _customerId: string): Promise<void
     return;
   }
 
+  // Use the admin user's name/email for the customer record — they exist by this point
+  const admin = await env.DB!.prepare(`SELECT name, email FROM users WHERE role = 'admin' LIMIT 1`).first<{ name: string; email: string }>();
   await upsertCustomer(env.DB, {
     id: customerId,
-    name: env.CUSTOMER_NAME?.trim() || 'Self-hosted',
-    email: env.CUSTOMER_EMAIL?.trim() || fromEmail(env),
+    name: admin?.name?.trim() || 'Self-hosted',
+    email: admin?.email?.trim() || fromEmail(env),
     plan: 'self-hosted',
   });
 
@@ -525,7 +527,7 @@ export async function handleApi(
     const admin = await env.DB!.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
     return json({
       configured: !!admin,
-      prefill: { name: env.CUSTOMER_NAME?.trim() || '', email: env.CUSTOMER_EMAIL?.trim() || '' },
+      prefill: { name: '', email: '' },
       telemetry_default: env.TELEMETRY_ENABLED === 'true',
     });
   }
@@ -725,7 +727,7 @@ export async function handleApi(
     }
     // POST /api/domains
     if (path === '/api/domains' && method === 'POST') {
-      const userEmail = userBySession?.email ?? env.CUSTOMER_EMAIL;
+      const userEmail = userBySession?.email;
       return await addDomain(request, env, customerId, userEmail, ctx);
     }
     // GET /api/domains/:id/stats

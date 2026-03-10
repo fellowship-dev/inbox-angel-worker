@@ -93,10 +93,8 @@ Everything else derives automatically:
 |---|---|
 | `REPORTS_DOMAIN` | `reports.<BASE_DOMAIN>` |
 | `FROM_EMAIL` | `noreply@reports.<BASE_DOMAIN>` |
-| `CUSTOMER_NAME` | `Self-hosted` |
-| `CUSTOMER_EMAIL` | same as `FROM_EMAIL` |
 
-Override any of these with `wrangler secret put <NAME>` if you need different values.
+Override either with `wrangler secret put <NAME>` if you need different values.
 
 ---
 
