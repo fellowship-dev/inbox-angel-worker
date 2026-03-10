@@ -308,9 +308,9 @@ let migrated = false;
 export async function ensureMigrated(db: D1Database): Promise<void> {
 	if (migrated) return;
 
-	await db.exec(
+	await db.prepare(
 		`CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`
-	);
+	).run();
 
 	const row = await db
 		.prepare(`SELECT MAX(version) as v FROM _migrations`)
@@ -319,7 +319,7 @@ export async function ensureMigrated(db: D1Database): Promise<void> {
 
 	for (const m of MIGRATIONS) {
 		if (m.version > current) {
-			// D1 exec() does not support multi-statement SQL — split on semicolons and run each individually
+			// D1 prepare().run() handles single statements only — split on semicolons
 			const statements = m.sql
 				.split(';')
 				.map(s => s.trim())
@@ -328,11 +328,10 @@ export async function ensureMigrated(db: D1Database): Promise<void> {
 			let failed = false;
 			for (const stmt of statements) {
 				try {
-					await db.exec(stmt);
+					await db.prepare(stmt).run();
 				} catch (e) {
-					// "column already exists" from a prior manual migrate run — safe to continue
-					console.warn(`[migrate] migration ${m.version} statement error (column may already exist):`, e);
-					// ALTER TABLE failures are non-fatal; CREATE TABLE failures are fatal
+					// ALTER TABLE "column already exists" from prior manual migrate — non-fatal
+					console.warn(`[migrate] migration ${m.version} statement error:`, e);
 					if (!stmt.toUpperCase().startsWith('ALTER')) {
 						failed = true;
 						break;
