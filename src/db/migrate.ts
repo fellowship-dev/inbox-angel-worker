@@ -231,6 +231,11 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       );
     `,
 	},
+	{
+		// SPF lookup count cached on domain row — populated on add + daily cron refresh
+		version: 13,
+		sql: `ALTER TABLE domains ADD COLUMN spf_lookup_count INTEGER;`,
+	},
 ];
 
 let migrated = false;

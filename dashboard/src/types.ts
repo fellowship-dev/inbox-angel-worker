@@ -108,6 +108,7 @@ export interface SpfFlatConfig {
 export interface SpfFlatStatus {
   available: boolean;
   config: SpfFlatConfig | null;
+  lookup_count: number | null;  // from domains.spf_lookup_count — populated on add + daily cron
 }
 
 export interface DayReport {

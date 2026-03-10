@@ -338,7 +338,8 @@ function SpfHealthCard({
   onDisable: () => void;
 }) {
   const { config } = status;
-  const lookupCount = config?.lookup_count ?? null;
+  // Use the domain-level cached count (populated on add + daily cron), fall back to config
+  const lookupCount = status.lookup_count ?? config?.lookup_count ?? null;
   const isHigh = lookupCount !== null && lookupCount >= 8;
   const isOver = lookupCount !== null && lookupCount >= 10;
 
@@ -395,7 +396,7 @@ function SpfHealthCard({
               ? `SPF requires ${lookupCount}/10 lookups — close to the limit. Adding another mail provider could break delivery. Consider enabling flattening.`
               : lookupCount !== null
               ? `SPF requires ${lookupCount}/10 DNS lookups — within safe limits.`
-              : 'SPF lookup depth not yet measured — send a test email via Email check to populate this.'}
+              : 'SPF lookup depth not yet measured — will populate within a few seconds of domain setup.'}
           </p>
           {config?.last_error && (
             <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#dc2626' }}>

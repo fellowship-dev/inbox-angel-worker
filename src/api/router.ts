@@ -53,6 +53,7 @@ import {
   getDomainById,
   insertDomain,
   updateDomainDnsRecord,
+  updateDomainSpfLookupCount,
   getRecentReports,
   getCheckResultByToken,
   insertMonitorSubscription,
@@ -127,7 +128,7 @@ async function getDomains(env: Env, customerId: string): Promise<Response> {
   return json({ domains: results });
 }
 
-async function addDomain(request: Request, env: Env, customerId: string, userEmail?: string): Promise<Response> {
+async function addDomain(request: Request, env: Env, customerId: string, userEmail?: string, ctx?: ExecutionContext): Promise<Response> {
   const body = await parseBody<{ domain?: string }>(request);
   if (!body.domain || typeof body.domain !== 'string') {
     return err('domain is required', 400);
@@ -203,6 +204,19 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
       dmarc_pct: null,
       dmarc_record: null,
     }).catch(e => console.warn('[domain.add] monitor sub insert failed (non-fatal):', e));
+  }
+
+  // Background SPF lookup — fire-and-forget, doesn't block response
+  if (ctx) {
+    ctx.waitUntil(
+      lookupSpf(domain)
+        .then(spf => {
+          if (spf?.lookup_count !== undefined) {
+            return updateDomainSpfLookupCount(env.DB!, domainId, spf.lookup_count);
+          }
+        })
+        .catch(e => console.warn('[domain.add] background SPF walk failed (non-fatal):', e))
+    );
   }
 
   // Return the full domain row so the frontend has the ID
@@ -697,7 +711,7 @@ export async function handleApi(
     // POST /api/domains
     if (path === '/api/domains' && method === 'POST') {
       const userEmail = userBySession?.email ?? env.CUSTOMER_EMAIL;
-      return await addDomain(request, env, customerId, userEmail);
+      return await addDomain(request, env, customerId, userEmail, ctx);
     }
     // GET /api/domains/:id/stats
     const domainStatsMatch = path.match(/^\/api\/domains\/([^/]+)\/stats$/);
@@ -859,7 +873,7 @@ export async function handleApi(
       // GET — return current config + availability
       if (method === 'GET') {
         const config = await getSpfFlattenConfig(env.DB, id);
-        return json({ available, config: config ?? null });
+        return json({ available, config: config ?? null, lookup_count: domain.spf_lookup_count ?? null });
       }
 
       // POST — enable + trigger initial flatten

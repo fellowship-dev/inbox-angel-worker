@@ -1,12 +1,13 @@
 import { handleEmail } from './email/handler';
 import { handleApi } from './api/router';
-import { getActiveSubscriptions, updateSubscriptionBaseline, getAllEnabledSpfFlattenConfigs, updateSpfFlattenResult, updateSpfFlattenError, getDomainById } from './db/queries';
+import { getActiveSubscriptions, updateSubscriptionBaseline, getAllEnabledSpfFlattenConfigs, updateSpfFlattenResult, updateSpfFlattenError, getDomainById, getAllDomains, updateDomainSpfLookupCount } from './db/queries';
 import { checkSubscription } from './monitor/check';
 import { sendChangeNotification } from './monitor/notify';
 import { sendWeeklyDigests } from './digest/weekly';
 import { ensureMigrated } from './db/migrate';
 import { reportsDomain, fromEmail } from './env-utils';
 import { flattenSpf } from './email/spf-flattener';
+import { lookupSpf } from './email/dns-check';
 
 export interface Env {
   DB: D1Database | undefined;
@@ -94,6 +95,18 @@ export default {
     }
 
     // Daily monitor check — every day 8am UTC (default / catch-all)
+    // Also refresh SPF lookup counts for all domains
+    const { results: allDomains } = await getAllDomains(env.DB);
+    for (const d of allDomains) {
+      lookupSpf(d.domain)
+        .then(spf => {
+          if (spf?.lookup_count !== undefined) {
+            return updateDomainSpfLookupCount(env.DB!, d.id, spf.lookup_count);
+          }
+        })
+        .catch(e => console.warn(`[monitor] SPF lookup refresh failed for ${d.domain}:`, e));
+    }
+
     const { results: subscriptions } = await getActiveSubscriptions(env.DB, 200);
     console.log(`[monitor] checking ${subscriptions.length} subscriptions`);
 
