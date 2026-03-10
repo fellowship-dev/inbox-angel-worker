@@ -193,7 +193,7 @@ export function AuthGate({ onSave }: Props) {
 
         {isSetup && (
           <label style={s.label}>
-            Your name
+            <span>Your name <span style={{ fontWeight: 400, color: '#9ca3af' }}>— optional</span></span>
             <input
               type="text"
               placeholder="Jane Smith"
@@ -217,6 +217,7 @@ export function AuthGate({ onSave }: Props) {
             autoComplete="email"
             autoFocus={!isSetup}
           />
+          {isSetup && <span style={s.hint}>Used to log in and receive monitoring alerts.</span>}
         </label>
 
         <label style={s.label}>
@@ -331,6 +332,7 @@ const s = {
     lineHeight: 1.5,
   } as const,
   checkboxHint: { color: '#6b7280' } as const,
+  hint: { fontWeight: 400, fontSize: '0.78rem', color: '#9ca3af', marginTop: '0.1rem' } as const,
   error: { margin: 0, color: '#dc2626', fontSize: '0.875rem' } as const,
   btn: {
     padding: '0.7rem',
