@@ -57,10 +57,29 @@ function navActive(route: string, section: 'domains' | 'check' | 'team' | 'audit
   return route === '/' || route === '/add' || route.startsWith('/domains/');
 }
 
+function CustomDomainBanner({ hostname }: { hostname: string }) {
+  const url = `https://${hostname}`;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: '0.75rem', flexWrap: 'wrap',
+      background: '#eff6ff', border: '1px solid #bfdbfe',
+      borderRadius: '8px', padding: '0.6rem 1rem', marginBottom: '1rem',
+      fontSize: '0.875rem', color: '#1e40af',
+    }}>
+      <span>Your dashboard is available at <strong>{hostname}</strong></span>
+      <a href={url} style={{ color: '#1e40af', fontWeight: 600, textDecoration: 'underline', flexShrink: 0 }}>
+        Switch →
+      </a>
+    </div>
+  );
+}
+
 export function App() {
   const [route, setRoute] = useState(getRoute);
   const [hasKey, setHasKey] = useState(() => !!localStorage.getItem('ia_api_key'));
   const [update, setUpdate] = useState<VersionInfo | null>(null);
+  const [customDomain, setCustomDomain] = useState<string | null>(null);
   const handleUnauth = () => { localStorage.removeItem('ia_api_key'); setHasKey(false); };
 
   // Unauthenticated routes — must be checked before auth gate
@@ -83,6 +102,18 @@ export function App() {
     if (sessionStorage.getItem(DISMISS_KEY)) return;
     getVersion().then(v => { if (v.update_available) setUpdate(v); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!hasKey) return;
+    fetch('/api/auth/status')
+      .then(r => r.json() as Promise<{ custom_domain?: string | null }>)
+      .then(s => {
+        if (s.custom_domain && window.location.hostname !== s.custom_domain) {
+          setCustomDomain(s.custom_domain);
+        }
+      })
+      .catch(() => {});
+  }, [hasKey]);
 
   const mobile = useIsMobile();
 
@@ -114,6 +145,7 @@ export function App() {
         </nav>
       </header>
       <main style={styles.main}>
+        {customDomain && <CustomDomainBanner hostname={customDomain} />}
         {update && (
           <UpdateBanner info={update} onDismiss={() => {
             sessionStorage.setItem(DISMISS_KEY, '1');

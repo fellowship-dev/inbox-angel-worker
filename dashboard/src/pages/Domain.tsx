@@ -21,7 +21,26 @@ interface Guidance {
   action?: { label: string; dns: string; targetPolicy: string };
 }
 
-function getGuidance(domain: Domain, passRate: number | null, hasData: boolean): Guidance {
+/**
+ * Build a recommended DMARC record that preserves existing tags (other rua= addresses,
+ * pct=, sp=, fo=, etc.) and just updates p= + appends our rua if not already present.
+ */
+function buildRecommendedRecord(currentRecord: string | null, targetPolicy: string, ruaAddress: string): string {
+  if (!currentRecord) {
+    return `v=DMARC1; p=${targetPolicy}; rua=mailto:${ruaAddress}`;
+  }
+  let record = /p=[a-z]+/.test(currentRecord)
+    ? currentRecord.replace(/p=[a-z]+/, `p=${targetPolicy}`)
+    : `${currentRecord}; p=${targetPolicy}`;
+  if (!record.includes(ruaAddress)) {
+    record = /rua=/.test(record)
+      ? record.replace(/rua=([^;]+)/, `rua=$1,mailto:${ruaAddress}`)
+      : `${record}; rua=mailto:${ruaAddress}`;
+  }
+  return record;
+}
+
+function getGuidance(domain: Domain, passRate: number | null, hasData: boolean, currentRecord: string | null): Guidance {
   const policy = domain.dmarc_policy ?? 'none';
 
   if (!hasData) return {
@@ -35,7 +54,7 @@ function getGuidance(domain: Domain, passRate: number | null, hasData: boolean):
     color: '#d97706',
     title: 'Monitoring only — not enforcing',
     body: `You're observing mail flows but DMARC is not protecting your domain yet. Once your pass rate stays above 95% for a few days, switch to quarantine.`,
-    action: { label: 'Next step — update your DMARC record:', dns: `v=DMARC1; p=quarantine; rua=mailto:${domain.rua_address}`, targetPolicy: 'quarantine' },
+    action: { label: 'Next step — update your DMARC record:', dns: buildRecommendedRecord(currentRecord, 'quarantine', domain.rua_address), targetPolicy: 'quarantine' },
   };
 
   if (policy === 'quarantine') {
@@ -43,7 +62,7 @@ function getGuidance(domain: Domain, passRate: number | null, hasData: boolean):
       color: '#2563eb',
       title: 'Ready to enforce',
       body: `Pass rate is ${passRate}% — your legitimate mail is well-aligned. You can safely move to reject to stop spoofed mail from reaching inboxes.`,
-      action: { label: 'Next step — update your DMARC record:', dns: `v=DMARC1; p=reject; rua=mailto:${domain.rua_address}`, targetPolicy: 'reject' },
+      action: { label: 'Next step — update your DMARC record:', dns: buildRecommendedRecord(currentRecord, 'reject', domain.rua_address), targetPolicy: 'reject' },
     };
     return {
       color: '#d97706',
@@ -155,7 +174,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const passRate = total > 0 ? Math.round((passed / total) * 100) : null;
   const maxTotal = Math.max(...stats.stats.map((r) => r.total), 1);
   const policy = domain.dmarc_policy ?? 'none';
-  const guidance = getGuidance(domain, passRate, total > 0);
+  const guidance = getGuidance(domain, passRate, total > 0, currentRecord);
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text);
