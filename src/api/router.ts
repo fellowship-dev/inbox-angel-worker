@@ -341,6 +341,31 @@ async function ensureCustomerExists(env: Env, _customerId: string): Promise<void
   } else {
     console.log(`[init] Domain provisioned with DNS record: ${provision.recordName}`);
   }
+
+  // Provision inbox-angel.<BASE_DOMAIN> as a CF Custom Domain for this Worker
+  if (env.CLOUDFLARE_API_TOKEN && getZoneId()) {
+    try {
+      // Resolve account ID from the zone
+      const zoneRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${getZoneId()}`, {
+        headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+      });
+      const zoneData = await zoneRes.json() as { result?: { account: { id: string } } };
+      const accountId = zoneData.result?.account?.id;
+
+      if (accountId) {
+        const workerName = env.WORKER_NAME ?? 'inbox-angel-worker';
+        const hostname = `inbox-angel.${domain}`;
+        await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/domains`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ environment: 'production', hostname, service: workerName, zone_id: getZoneId() }),
+        });
+        console.log(`[init] Custom domain registered: ${hostname}`);
+      }
+    } catch (e) {
+      console.warn('[init] Custom domain provisioning failed (non-fatal):', e);
+    }
+  }
 }
 
 async function getCheckResults(env: Env, customerId: string): Promise<Response> {
