@@ -321,41 +321,51 @@ export async function ensureMigrated(db: D1Database): Promise<void> {
 		if (m.version > current) {
 			try {
 				await db.exec(m.sql);
+				// Only record as applied when exec actually succeeds
+				await db
+					.prepare(`INSERT OR IGNORE INTO _migrations (version, applied_at) VALUES (?, ?)`)
+					.bind(m.version, new Date().toISOString())
+					.run();
+				console.log(`[migrate] applied migration ${m.version}`);
 			} catch (e) {
-				// Most likely "column already exists" from a prior manual migrate run — safe to continue
-				console.warn(`[migrate] migration ${m.version} error (column may already exist):`, e);
+				// Most likely "column already exists" from a prior manual migrate run — safe to continue.
+				// Do NOT record as applied so it will be retried on the next request.
+				console.warn(`[migrate] migration ${m.version} error (will retry):`, e);
 			}
-			await db
-				.prepare(`INSERT OR IGNORE INTO _migrations (version, applied_at) VALUES (?, ?)`)
-				.bind(m.version, new Date().toISOString())
-				.run();
-			console.log(`[migrate] applied migration ${m.version}`);
 		}
 	}
 
 	// Auto-generate a legacy API key (fallback for non-password auth paths)
-	const existingAutoKey = await db.prepare(`SELECT value FROM settings WHERE key = 'auto_api_key'`).first<{ value: string }>();
-	if (!existingAutoKey) {
-		const autoKey = crypto.randomUUID();
-		await db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_api_key', ?)`).bind(autoKey).run();
+	try {
+		const existingAutoKey = await db.prepare(`SELECT value FROM settings WHERE key = 'auto_api_key'`).first<{ value: string }>();
+		if (!existingAutoKey) {
+			const autoKey = crypto.randomUUID();
+			await db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_api_key', ?)`).bind(autoKey).run();
+		}
+	} catch {
+		// settings table may not exist yet if a migration failed — safe to skip
 	}
 
 	// Migrate settings-based auth (v0.9.x) → users table
-	const existingAdmin = await db.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
-	if (!existingAdmin) {
-		const [pwHash, email, name, sessionToken] = await Promise.all([
-			db.prepare(`SELECT value FROM settings WHERE key = 'password_hash'`).first<{ value: string }>(),
-			db.prepare(`SELECT value FROM settings WHERE key = 'user_email'`).first<{ value: string }>(),
-			db.prepare(`SELECT value FROM settings WHERE key = 'user_name'`).first<{ value: string }>(),
-			db.prepare(`SELECT value FROM settings WHERE key = 'session_token'`).first<{ value: string }>(),
-		]);
-		if (pwHash?.value && email?.value) {
-			await db.prepare(`
-				INSERT OR IGNORE INTO users (id, email, name, password_hash, role, session_token)
-				VALUES (?, ?, ?, ?, 'admin', ?)
-			`).bind(crypto.randomUUID(), email.value, name?.value || email.value, pwHash.value, sessionToken?.value ?? null).run();
-			console.log('[migrate] migrated settings auth → users table');
+	try {
+		const existingAdmin = await db.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
+		if (!existingAdmin) {
+			const [pwHash, email, name, sessionToken] = await Promise.all([
+				db.prepare(`SELECT value FROM settings WHERE key = 'password_hash'`).first<{ value: string }>(),
+				db.prepare(`SELECT value FROM settings WHERE key = 'user_email'`).first<{ value: string }>(),
+				db.prepare(`SELECT value FROM settings WHERE key = 'user_name'`).first<{ value: string }>(),
+				db.prepare(`SELECT value FROM settings WHERE key = 'session_token'`).first<{ value: string }>(),
+			]);
+			if (pwHash?.value && email?.value) {
+				await db.prepare(`
+					INSERT OR IGNORE INTO users (id, email, name, password_hash, role, session_token)
+					VALUES (?, ?, ?, ?, 'admin', ?)
+				`).bind(crypto.randomUUID(), email.value, name?.value || email.value, pwHash.value, sessionToken?.value ?? null).run();
+				console.log('[migrate] migrated settings auth → users table');
+			}
 		}
+	} catch {
+		// users or settings table may not exist yet if a migration failed — safe to skip
 	}
 
 	migrated = true;
