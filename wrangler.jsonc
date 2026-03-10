@@ -27,7 +27,7 @@
 	//      • Email Routing Rules : Edit  ← enable routing, set catch-all rule
 	//      • DNS                 : Edit  ← MX records for subdomain + per-customer TXT records
 	//      • Workers Routes      : Edit
-	//    Run once: CLOUDFLARE_EMAIL_TOKEN=<token> CLOUDFLARE_ZONE_ID=<zone> REPORTS_DOMAIN=<domain> npx tsx scripts/setup-email-routing.ts
+	//    Run once: CLOUDFLARE_EMAIL_TOKEN=<token> REPORTS_DOMAIN=<domain> npx tsx scripts/setup-email-routing.ts
 	//      → enables Email Routing on the zone
 	//      → adds MX records for REPORTS_DOMAIN subdomain
 	//      → sets catch-all rule: *@REPORTS_DOMAIN → this Worker
@@ -41,7 +41,6 @@
 	//      wrangler secret put BASE_DOMAIN          ← your root domain (e.g. yourdomain.com)
 	//
 	//    That's it — everything else auto-derives:
-	//      CLOUDFLARE_ZONE_ID = looked up via CF API from BASE_DOMAIN (override: wrangler secret put CLOUDFLARE_ZONE_ID)
 	//      REPORTS_DOMAIN     = reports.<BASE_DOMAIN>                 (override: wrangler secret put REPORTS_DOMAIN)
 	//      FROM_EMAIL         = noreply@reports.<BASE_DOMAIN>         (override: wrangler secret put FROM_EMAIL)
 	//      CUSTOMER_NAME      = "Self-hosted"                         (override: wrangler secret put CUSTOMER_NAME)
@@ -111,8 +110,7 @@
 		"WORKER_NAME": "inbox-angel-worker",  // must match the "name" field above
 		"TELEMETRY_ENABLED": "false",         // set to "true" to send anonymous usage stats
 		"DEBUG": "false",                     // set to "true" for verbose logs in CF Workers Logs
-		"BASE_DOMAIN": "",                    // required — e.g. "yourdomain.com"
-		"CLOUDFLARE_ZONE_ID": ""              // optional — auto-detected from BASE_DOMAIN if left blank
+		"BASE_DOMAIN": ""                     // required — e.g. "yourdomain.com"
 		// Required secret: CLOUDFLARE_API_TOKEN (see README for token permissions)
 		// Optional overrides (wrangler secret put <NAME>):
 		//   CUSTOMER_EMAIL  — alert recipient (defaults to noreply@reports.<BASE_DOMAIN>)

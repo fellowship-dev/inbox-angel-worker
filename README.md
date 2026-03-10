@@ -89,9 +89,8 @@ wrangler secret put BASE_DOMAIN           # your root domain, e.g. yourdomain.co
 
 Everything else derives automatically:
 
-| Secret | Default |
+| Variable | Default |
 |---|---|
-| `CLOUDFLARE_ZONE_ID` | looked up via CF API from `BASE_DOMAIN` |
 | `REPORTS_DOMAIN` | `reports.<BASE_DOMAIN>` |
 | `FROM_EMAIL` | `noreply@reports.<BASE_DOMAIN>` |
 | `CUSTOMER_NAME` | `Self-hosted` |
