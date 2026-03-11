@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Env } from '../../src/index';
 
-// Mock auth so all requests pass with customerId = 'org_test'
+// Mock auth so all requests pass with userId = 'org_test'
 vi.mock('../../src/api/auth', () => ({
-  requireAuth: vi.fn().mockResolvedValue({ customerId: 'org_test' }),
+  requireAuth: vi.fn().mockResolvedValue({ userId: 'org_test' }),
   AuthError: class AuthError extends Error {
     constructor(msg: string, public status = 401) { super(msg); this.name = 'AuthError'; }
   },

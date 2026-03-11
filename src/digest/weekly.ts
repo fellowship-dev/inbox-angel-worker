@@ -1,5 +1,5 @@
 // Weekly DMARC digest emails.
-// Runs every Monday (cron "0 9 * * 1") and sends a per-customer summary of
+// Runs every Monday (cron "0 9 * * 1") and sends a summary of
 // the past 7 days of DMARC aggregate reports.
 //
 // Delivery: Cloudflare Email Workers (SEND_EMAIL binding).
@@ -75,7 +75,7 @@ function formatDomainSection(
 }
 
 export function buildDigestBody(
-  customerName: string,
+  recipientName: string,
   stats: DomainWeeklyStat[],
   sourcesByDomain: Map<number, FailingSource[]>,
   weekLabel: string,
@@ -84,7 +84,7 @@ export function buildDigestBody(
   latestVersion: string | null = null,
 ): string {
   const lines: string[] = [
-    `Hi ${customerName},`,
+    `Hi ${recipientName},`,
     '',
     `Here's your DMARC summary for the week of ${weekLabel}.`,
     '',

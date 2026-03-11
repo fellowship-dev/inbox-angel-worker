@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Env } from '../../src/index';
 import type { Domain } from '../../src/db/types';
 
-// Mock auth so all requests pass with customerId = 'org_test'
+// Mock auth so all requests pass with userId = 'org_test'
 vi.mock('../../src/api/auth', () => ({
-  requireAuth: vi.fn().mockResolvedValue({ customerId: 'org_test' }),
+  requireAuth: vi.fn().mockResolvedValue({ userId: 'org_test' }),
   AuthError: class AuthError extends Error {
     constructor(msg: string, public status = 401) { super(msg); this.name = 'AuthError'; }
   },
@@ -180,7 +180,7 @@ describe('auth failure', () => {
 // ── GET /api/domains ──────────────────────────────────────────
 
 describe('GET /api/domains', () => {
-  it('returns empty domains array when customer has none', async () => {
+  it('returns empty domains array when none exist', async () => {
     const res = await handleApi(req('GET', '/api/domains'), makeEnv(), ctx);
     expect(res.status).toBe(200);
     const body = await res.json() as any;
@@ -364,7 +364,7 @@ describe('BASE_DOMAIN lazy init', () => {
 // ── DELETE /api/domains/:id ───────────────────────────────────
 
 describe('DELETE /api/domains/:id', () => {
-  it('returns 204 when domain is owned by customer', async () => {
+  it('returns 204 when domain exists', async () => {
     const env = makeEnv();
     const domain: Partial<Domain> = { id: 5, domain: 'acme.com',  dns_record_id: null };
     (env.DB.prepare as any)
@@ -535,7 +535,7 @@ describe('POST /api/monitor', () => {
 // ── GET /api/check-results ────────────────────────────────────
 
 describe('GET /api/check-results', () => {
-  it('returns empty results when customer has no domains', async () => {
+  it('returns empty results when no domains exist', async () => {
     const res = await handleApi(req('GET', '/api/check-results'), makeEnv(), ctx);
     expect(res.status).toBe(200);
     const body = await res.json() as any;

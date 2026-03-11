@@ -7,7 +7,7 @@
 //   Authorization: Bearer <jwt>
 //     → verify signature against JWKS
 //     → extract org claim (AUTH0_ORG_CLAIM, default "org_id")
-//     → return { customerId }
+//     → return { userId }
 //
 // Dev/bypass mode (AUTH0_DOMAIN is empty):
 //   Falls back to X-Api-Key header matched against API_KEY env var.
@@ -24,7 +24,7 @@ export class AuthError extends Error {
 }
 
 export interface AuthContext {
-  customerId: string;  // maps to customers.id in D1 (= IdP org/tenant ID)
+  userId: string;  // IdP subject or API key identity
 }
 
 // ── JWT helpers ───────────────────────────────────────────────
@@ -141,7 +141,7 @@ export interface AuthEnv {
 
 /**
  * Extracts and verifies the caller's identity from the request.
- * Returns { customerId } on success; throws AuthError on failure.
+ * Returns { userId } on success; throws AuthError on failure.
  *
  * To swap auth providers: point AUTH0_DOMAIN to the new issuer's domain.
  * The JWKS URI is derived as: https://{AUTH0_DOMAIN}/.well-known/jwks.json
@@ -154,8 +154,8 @@ export async function requireAuth(request: Request, env: AuthEnv): Promise<AuthC
     if (!apiKey || !env.API_KEY || apiKey !== env.API_KEY) {
       throw new AuthError('Auth not configured — provide X-Api-Key header');
     }
-    // In bypass mode the API key IS the customer ID (useful for seeding/testing)
-    return { customerId: apiKey };
+    // In bypass mode the API key IS the user ID (useful for seeding/testing)
+    return { userId: apiKey };
   }
 
   // ── JWT verification ─────────────────────────────────────────
@@ -170,7 +170,7 @@ export async function requireAuth(request: Request, env: AuthEnv): Promise<AuthC
   const claims = await verifyJwt(token, jwksUri);
 
   const orgClaim = env.AUTH0_ORG_CLAIM ?? 'org_id';
-  const customerId = assertClaims(claims, env.AUTH0_AUDIENCE, orgClaim);
+  const userId = assertClaims(claims, env.AUTH0_AUDIENCE, orgClaim);
 
-  return { customerId };
+  return { userId };
 }

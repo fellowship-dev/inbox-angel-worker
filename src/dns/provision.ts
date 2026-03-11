@@ -1,16 +1,16 @@
-// Cloudflare DNS provisioning for per-customer DMARC authorization records.
+// Cloudflare DNS provisioning for DMARC authorization records.
 //
 // RFC 7489 §7.1: when the rua= address is on a different domain than the
 // policy domain, the reporting domain MUST publish a DNS TXT record to
 // authorize receipt of reports:
 //
-//   {customer-domain}._report._dmarc.{reports-domain}  TXT  "v=DMARC1;"
+//   {policy-domain}._report._dmarc.{reports-domain}  TXT  "v=DMARC1;"
 //
-// Example: customer adds acme.com, our reports domain is reports.inboxangel.io
+// Example: adding acme.com, reports domain is reports.inboxangel.io
 //   → create: acme.com._report._dmarc.reports.inboxangel.io  TXT  "v=DMARC1;"
 //
 // We manage this record via Cloudflare DNS API. The CF record ID is stored in
-// domains.dns_record_id so we can delete it when the customer removes the domain.
+// domains.dns_record_id so we can delete it when the domain is removed.
 
 import { getZoneId } from '../env-utils';
 import { logAudit } from '../audit/log';
@@ -59,16 +59,16 @@ function cfHeaders(token: string): Record<string, string> {
 }
 
 /**
- * Creates the cross-domain DMARC authorization TXT record for a customer domain.
- * Call this when a customer adds a domain to their account.
+ * Creates the cross-domain DMARC authorization TXT record for a monitored domain.
+ * Call this when a domain is added.
  */
 export async function provisionDomain(
   env: ProvisionEnv,
-  customerDomain: string,
+  policyDomain: string,
   audit?: DnsAuditOpts,
 ): Promise<DnsProvisionResult> {
   // RFC 7489 §7.1 cross-domain authorization record name
-  const recordName = `${customerDomain}._report._dmarc.${env.REPORTS_DOMAIN}`;
+  const recordName = `${policyDomain}._report._dmarc.${env.REPORTS_DOMAIN}`;
   const zoneId = getZoneId();
 
   if (!env.CLOUDFLARE_API_TOKEN || !zoneId) {
@@ -81,7 +81,7 @@ export async function provisionDomain(
     name: recordName,
     content: 'v=DMARC1;',
     ttl: 3600,
-    comment: `InboxAngel DMARC auth for ${customerDomain}`,
+    comment: `InboxAngel DMARC auth for ${policyDomain}`,
   };
 
   let res: Response;
@@ -120,7 +120,7 @@ export async function provisionDomain(
 
 /**
  * Deletes the cross-domain DMARC authorization record.
- * Call this when a customer removes a domain. Idempotent — 404 is silently ignored.
+ * Call this when a domain is removed. Idempotent — 404 is silently ignored.
  */
 export async function deprovisionDomain(
   env: DeprovisionEnv,

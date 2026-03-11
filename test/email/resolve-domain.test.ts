@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resolveDomain } from '../../src/email/resolve-customer';
+import { resolveDomain } from '../../src/email/resolve-domain';
 import type { Domain } from '../../src/db/types';
 
 // ── Fixtures ──────────────────────────────────────────────────

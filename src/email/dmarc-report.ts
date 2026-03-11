@@ -7,7 +7,7 @@
 
 import { Env } from '../index';
 import { extractAttachmentBytes, MimeExtractError } from './mime-extract';
-import { resolveDomain } from './resolve-customer';
+import { resolveDomain } from './resolve-domain';
 import { parseDmarcEmail, ParseEmailError } from '../dmarc/parse-email';
 import { storeReport } from '../dmarc/store-report';
 

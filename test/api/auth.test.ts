@@ -15,10 +15,10 @@ function makeRequest(headers: Record<string, string> = {}): Request {
 }
 
 describe('requireAuth — bypass mode (AUTH0_DOMAIN empty)', () => {
-  it('returns customerId = api key value when key matches', async () => {
+  it('returns userId = api key value when key matches', async () => {
     const req = makeRequest({ 'x-api-key': 'test-key-org_abc123' });
     const ctx = await requireAuth(req, BYPASS_ENV);
-    expect(ctx.customerId).toBe('test-key-org_abc123');
+    expect(ctx.userId).toBe('test-key-org_abc123');
   });
 
   it('throws AuthError when x-api-key is missing', async () => {

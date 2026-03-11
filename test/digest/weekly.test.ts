@@ -52,7 +52,7 @@ function makeEnv() {
 // ── buildDigestBody ───────────────────────────────────────────
 
 describe('buildDigestBody', () => {
-  it('includes customer name in greeting', () => {
+  it('includes recipient name in greeting', () => {
     const body = buildDigestBody('Acme', [STAT_GOOD], new Map(), 'Mar 3, 2026', 'rua@reports.inboxangel.io', 'reports.inboxangel.io');
     expect(body).toContain('Hi Acme');
   });

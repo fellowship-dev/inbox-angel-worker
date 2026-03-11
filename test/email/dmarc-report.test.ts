@@ -15,7 +15,7 @@ vi.mock('../../src/email/mime-extract', () => ({
   },
 }));
 
-vi.mock('../../src/email/resolve-customer', () => ({
+vi.mock('../../src/email/resolve-domain', () => ({
   resolveDomain: vi.fn(),
 }));
 
@@ -32,7 +32,7 @@ vi.mock('../../src/dmarc/store-report', () => ({
 
 import { handleDmarcReport } from '../../src/email/dmarc-report';
 import * as mimeExtract from '../../src/email/mime-extract';
-import * as resolveCustomerMod from '../../src/email/resolve-customer';
+import * as resolveDomainMod from '../../src/email/resolve-domain';
 import * as parseEmailMod from '../../src/dmarc/parse-email';
 import * as storeReportMod from '../../src/dmarc/store-report';
 
@@ -107,7 +107,7 @@ function makeEnv(): Env {
 beforeEach(() => {
   // Happy-path defaults — individual tests override as needed
   vi.mocked(mimeExtract.extractAttachmentBytes).mockResolvedValue(new Uint8Array([0x1f, 0x8b]));
-  vi.mocked(resolveCustomerMod.resolveDomain).mockResolvedValue(DOMAIN);
+  vi.mocked(resolveDomainMod.resolveDomain).mockResolvedValue(DOMAIN);
   vi.mocked(parseEmailMod.parseDmarcEmail).mockResolvedValue(REPORT);
   vi.mocked(storeReportMod.storeReport).mockResolvedValue({ stored: true, reportId: 42 });
 });
@@ -129,7 +129,7 @@ describe('handleDmarcReport — happy path', () => {
     const env = makeEnv();
     await handleDmarcReport(makeMessage(), env);
 
-    expect(resolveCustomerMod.resolveDomain).toHaveBeenCalledWith(env.DB, 'acme.com');
+    expect(resolveDomainMod.resolveDomain).toHaveBeenCalledWith(env.DB, 'acme.com');
   });
 
   it('calls parseDmarcEmail with the extracted bytes', async () => {
@@ -220,7 +220,7 @@ describe('handleDmarcReport — error paths', () => {
   });
 
   it('calls setReject when policy_domain is not registered', async () => {
-    vi.mocked(resolveCustomerMod.resolveDomain).mockResolvedValue(null);
+    vi.mocked(resolveDomainMod.resolveDomain).mockResolvedValue(null);
     const message = makeMessage();
     await handleDmarcReport(message, makeEnv());
 
@@ -231,7 +231,7 @@ describe('handleDmarcReport — error paths', () => {
   });
 
   it('calls parseDmarcEmail but not storeReport when policy_domain is unknown', async () => {
-    vi.mocked(resolveCustomerMod.resolveDomain).mockResolvedValue(null);
+    vi.mocked(resolveDomainMod.resolveDomain).mockResolvedValue(null);
     await handleDmarcReport(makeMessage(), makeEnv());
 
     expect(parseEmailMod.parseDmarcEmail).toHaveBeenCalled();
