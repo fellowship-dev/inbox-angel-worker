@@ -22,18 +22,14 @@ export interface Env {
   API_KEY?: string;             // legacy bypass key — superseded by email/password auth
   // Cloudflare (secrets — set via wrangler secret put)
   CLOUDFLARE_API_TOKEN?: string; // EMAIL token: email routing + DNS writes
-  CLOUDFLARE_ACCOUNT_ID?: string; // optional — used for anonymous telemetry ID
   // Worker config (vars in wrangler.jsonc)
   WORKER_NAME?: string;          // defaults to "inbox-angel-worker"
-  TELEMETRY_ENABLED?: string;    // "true" to send anonymous usage events (default: off)
-  DEBUG?: string;                // "true" for verbose CF Workers Logs (default: off)
   // Bindings
   SEND_EMAIL?: SendEmail;        // CF Email Workers outbound binding
   AUTH_LIMITER?: { limit(opts: { key: string }): Promise<{ success: boolean }> }; // auth rate limiting (10/min)
   API_LIMITER?: { limit(opts: { key: string }): Promise<{ success: boolean }> };  // global rate limiting (200/min)
-  // Self-hosted single-tenant init — auto-provisions on first request
-  BASE_DOMAIN?: string;          // e.g. "yourdomain.com" — required
-  // Optional overrides — derived from BASE_DOMAIN when not set
+  // Domain config — set via wizard (D1) or env var override
+  BASE_DOMAIN?: string;          // e.g. "yourdomain.com" — resolved from D1 when absent
   REPORTS_DOMAIN?: string;       // defaults to "reports.<BASE_DOMAIN>"
   FROM_EMAIL?: string;           // defaults to "noreply@reports.<BASE_DOMAIN>"
 }
@@ -79,7 +75,7 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!env.DB) { console.error('[cron] DB binding missing — D1 not configured'); return; }
     await ensureMigrated(env.DB);
-    env = await enrichEnv(env);
+    env = await enrichEnv(env, env.DB);
     const rd = reportsDomain(env) ?? '';
     const fe = fromEmail(env) ?? '';
     const derivedEnv = { ...env, REPORTS_DOMAIN: rd, FROM_EMAIL: fe };
@@ -223,11 +219,10 @@ function setupPage(): Response {
   <ol>
     <li>Create a D1 database:<br><pre>wrangler d1 create inbox-angel</pre></li>
     <li>Copy the <code>database_id</code> from the output and paste it into <code>wrangler.jsonc</code> under <code>d1_databases[0].database_id</code>.</li>
-    <li>Redeploy:<br><pre>npm run deploy</pre>The first request after redeploy will auto-migrate the schema — no extra step needed.</li>
-    <li>Set your two required secrets:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN
-wrangler secret put BASE_DOMAIN</pre>
-      <small>Everything else auto-derives — zone ID is looked up from BASE_DOMAIN, reports subdomain defaults to <code>reports.&lt;BASE_DOMAIN&gt;</code>. No <code>API_KEY</code> needed — you'll create your login on first visit to the dashboard.</small>
+    <li>Set your API token:<br><pre>wrangler secret put CLOUDFLARE_API_TOKEN</pre>
+      <small>This is the only secret you need. Your domain is configured in the setup wizard after first login.</small>
     </li>
+    <li>Deploy:<br><pre>npm run deploy</pre>Then visit your dashboard, create an account, and enter your domain in the setup wizard.</li>
   </ol>
   <div class="note">
     Full setup guide: <a href="https://github.com/Fellowship-dev/inbox-angel-worker#self-hosting" target="_blank">github.com/Fellowship-dev/inbox-angel-worker</a>

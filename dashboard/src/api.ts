@@ -252,6 +252,28 @@ export async function logout(): Promise<void> {
   localStorage.removeItem('ia_api_key');
 }
 
+export async function setBaseDomain(domain: string): Promise<{
+  ok: boolean;
+  domain: string;
+  domain_id: number;
+  reports_domain: string;
+  zone_id: string | null;
+  account_id: string | null;
+}> {
+  const res = await apiFetch('/api/settings/base-domain', {
+    method: 'POST',
+    body: JSON.stringify({ domain }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function registerDestination(): Promise<{ ok: boolean; email: string; verification_sent: boolean }> {
+  const res = await apiFetch('/api/settings/register-destination', { method: 'POST' });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function setupEmailRouting(): Promise<{ ok: boolean; reports_domain: string; status: string; detail: string }> {
   const res = await apiFetch('/api/setup/email-routing', { method: 'POST' });
   if (!res.ok) await throwApiError(res);

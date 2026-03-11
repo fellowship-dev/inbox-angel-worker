@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { setupCustomDomain } from './api';
 
 interface AuthStatus {
   configured: boolean;
   prefill: { name: string; email: string };
   telemetry_default: boolean;
   turnstile_site_key: string | null;
+  has_domain: boolean;
 }
 
 interface Props {
@@ -58,147 +58,9 @@ function loadTurnstileScript() {
   document.head.appendChild(s);
 }
 
-function SetupDone({ email, emailVerificationSent, onContinue }: {
-  email: string;
-  emailVerificationSent: boolean;
-  onContinue: () => void;
-}) {
-  const [phase, setPhase] = useState<'email' | 'custom-domain'>('email');
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionError, setProvisionError] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [hostname, setHostname] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/auth/status')
-      .then(r => r.json() as Promise<{ custom_domain?: string | null; base_domain?: string | null }>)
-      .then(d => {
-        if (d.custom_domain) setHostname(d.custom_domain);
-        else if (d.base_domain) setHostname(`inbox-angel.${d.base_domain}`);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (countdown === null || !hostname) return;
-    if (countdown <= 0) {
-      window.location.href = `https://${hostname}/#/setup`;
-      return;
-    }
-    const t = setTimeout(() => setCountdown(c => (c ?? 1) - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown, hostname]);
-
-  const provision = async () => {
-    setProvisioning(true);
-    setProvisionError(null);
-    try {
-      const result = await setupCustomDomain();
-      setHostname(result.hostname);
-      setCountdown(5);
-    } catch (e: any) {
-      setProvisionError(e.message ?? 'Failed to set up custom domain');
-    } finally {
-      setProvisioning(false);
-    }
-  };
-
-  if (phase === 'email') {
-    return (
-      <div style={s.wrap}>
-        <div style={s.box}>
-          <div style={s.logo}>🪄 InboxAngel</div>
-          <div style={s.successBadge}>✓ Account created</div>
-          <h1 style={s.title}>One more thing</h1>
-          {emailVerificationSent ? (
-            <>
-              <p style={s.subtitle}>
-                We've asked Cloudflare to send a verification email to <strong>{email}</strong>.
-              </p>
-              <div style={s.notice}>
-                <strong>Why?</strong> InboxAngel sends monitoring alerts and password reset emails
-                through Cloudflare Email Workers. Cloudflare requires destination addresses to be
-                verified once — this is the only step they put in your way.
-              </div>
-              <p style={s.muted}>Click the link in that email, then you're fully set up. You can continue to the dashboard in the meantime.</p>
-            </>
-          ) : (
-            <>
-              <p style={s.subtitle}>
-                To receive <strong>password reset emails</strong> and <strong>monitoring alerts</strong>,
-                you need to verify your email as a destination in Cloudflare Email Routing.
-              </p>
-              <div style={s.notice}>
-                <strong>Why?</strong> InboxAngel sends emails via Cloudflare's Email Workers
-                binding (<code style={s.code}>SEND_EMAIL</code>), which can only deliver to
-                verified destination addresses — this is a Cloudflare platform requirement,
-                not something we can bypass.
-              </div>
-              <ol style={s.steps}>
-                <li>Go to <strong>Cloudflare Dashboard → your zone → Email → Routing → Destinations</strong></li>
-                <li>Click <strong>Add destination</strong> and enter <code style={s.code}>{email}</code></li>
-                <li>Check your inbox and click the verification link Cloudflare sends</li>
-              </ol>
-              <p style={s.muted}>You can skip this for now and verify later — just know you won't receive emails until it's done.</p>
-            </>
-          )}
-          <button type="button" style={s.btn} onClick={() => setPhase('custom-domain')}>
-            Continue →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Phase 2: custom domain setup
-  return (
-    <div style={s.wrap}>
-      <div style={s.box}>
-        <div style={s.logo}>🪄 InboxAngel</div>
-        <h1 style={s.title}>Custom domain</h1>
-        <p style={s.subtitle}>
-          Access your dashboard at a clean URL instead of the default workers.dev address.
-        </p>
-
-        {countdown !== null && hostname ? (
-          <div style={{
-            background: '#dcfce7', border: '1px solid #bbf7d0',
-            borderRadius: '8px', padding: '1rem', textAlign: 'center',
-          }}>
-            <p style={{ margin: 0, fontSize: '0.95rem', color: '#15803d', fontWeight: 600 }}>
-              Custom domain is live!
-            </p>
-            <p style={{ margin: '0.25rem 0 0', fontFamily: 'monospace', fontSize: '0.9rem', color: '#166534' }}>
-              {hostname}
-            </p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: '#166534' }}>
-              Redirecting in {countdown}s…
-            </p>
-          </div>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={provision}
-              disabled={provisioning}
-              style={{ ...s.btn, opacity: provisioning ? 0.6 : 1 }}
-            >
-              {provisioning ? 'Setting up…' : 'Set up custom domain'}
-            </button>
-            {provisionError && <p style={{ ...s.error, marginTop: '0.5rem' }}>{provisionError}</p>}
-            <button type="button" onClick={onContinue} style={s.link}>
-              Skip for now →
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function AuthGate({ onSave }: Props) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
-  const [view, setView] = useState<'auth' | 'forgot' | 'forgot-sent' | 'setup-done'>('auth');
+  const [view, setView] = useState<'auth' | 'forgot' | 'forgot-sent'>('auth');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -206,8 +68,6 @@ export function AuthGate({ onSave }: Props) {
   const [telemetry, setTelemetry] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [pendingToken, setPendingToken] = useState('');
-  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -257,12 +117,12 @@ export function AuthGate({ onSave }: Props) {
         return;
       }
 
-      const { token, email_verification_sent } = await res.json() as { token: string; email_verification_sent?: boolean };
+      const { token, has_domain } = await res.json() as { token: string; has_domain?: boolean };
       localStorage.setItem('ia_api_key', token);
       if (!status?.configured) {
-        setPendingToken(token);
-        setEmailVerificationSent(email_verification_sent ?? false);
-        setView('setup-done');
+        // After first-time setup: go to wizard (step 0 if no domain, step 1 if domain exists)
+        window.location.hash = has_domain ? '#/setup' : '#/setup';
+        onSave(token);
       } else {
         onSave(token);
       }
@@ -339,17 +199,6 @@ export function AuthGate({ onSave }: Props) {
         </div>
       </div>
     );
-  }
-
-  if (view === 'setup-done') {
-    return <SetupDone
-      email={email}
-      emailVerificationSent={emailVerificationSent}
-      onContinue={() => {
-        window.location.hash = '#/setup';
-        onSave(pendingToken);
-      }}
-    />;
   }
 
   const isSetup = !status.configured;
@@ -537,36 +386,4 @@ const s = {
     textDecoration: 'underline',
   } as const,
   muted: { color: '#9ca3af', fontSize: '0.875rem' } as const,
-  successBadge: {
-    display: 'inline-block',
-    background: '#dcfce7',
-    color: '#16a34a',
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    padding: '0.25rem 0.6rem',
-    borderRadius: '4px',
-  } as const,
-  notice: {
-    fontSize: '0.8rem',
-    color: '#374151',
-    background: '#fef9c3',
-    border: '1px solid #fde68a',
-    borderRadius: '6px',
-    padding: '0.75rem 1rem',
-    lineHeight: 1.5,
-  } as const,
-  code: {
-    fontFamily: 'monospace',
-    fontSize: '0.85em',
-    background: '#f3f4f6',
-    padding: '0.1em 0.3em',
-    borderRadius: '3px',
-  } as const,
-  steps: {
-    margin: '0',
-    paddingLeft: '1.25rem',
-    fontSize: '0.875rem',
-    color: '#374151',
-    lineHeight: 1.8,
-  } as const,
 };

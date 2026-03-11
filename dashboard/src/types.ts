@@ -189,6 +189,7 @@ export interface OnboardingStatus {
 export type WizardStepState = 'not_started' | 'complete' | 'skipped';
 
 export interface WizardState {
+  domain: WizardStepState;
   spf: WizardStepState;
   dkim: WizardStepState;
   dmarc: WizardStepState;

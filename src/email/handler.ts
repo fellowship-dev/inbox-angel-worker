@@ -3,7 +3,6 @@ import { handleFreeCheck } from './free-check';
 import { handleDmarcReport } from './dmarc-report';
 import { handleTlsRptReport } from './tls-rpt';
 import { track } from '../telemetry';
-import { debug } from '../debug';
 
 // Routes inbound email by recipient address local part:
 //   rua@reports.yourdomain.com      → DMARC RUA aggregate report (routed by XML content)
@@ -16,8 +15,6 @@ export async function handleEmail(
 ): Promise<void> {
   const to = message.to.toLowerCase();
   const localPart = to.split('@')[0];
-
-  debug(env, 'email.inbound', { to, from: message.from, route: localPart === 'rua' ? 'dmarc-report' : localPart === 'tls-rpt' ? 'tls-rpt' : 'free-check' });
 
   if (localPart === 'rua') {
     const { failure_count } = await handleDmarcReport(message, env);

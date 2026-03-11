@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getDomains, getOnboardingStatus, applyDmarc, getWizardState, updateWizardState, setupEmailRouting } from '../api';
+import { getDomains, getOnboardingStatus, applyDmarc, getWizardState, updateWizardState, setupEmailRouting, setBaseDomain, registerDestination } from '../api';
 import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
 
 type Severity = 'good' | 'info' | 'warning' | 'error';
@@ -92,7 +92,7 @@ function CodeBlock({ value, onCopy, copied }: { value: string; onCopy: () => voi
 }
 
 function StepProgress({ current, total, wizardState }: { current: number; total: number; wizardState: WizardState }) {
-  const stepKeys: (keyof WizardState)[] = ['spf', 'dkim', 'dmarc', 'routing'];
+  const stepKeys: (keyof WizardState)[] = ['domain', 'spf', 'dkim', 'dmarc', 'routing'];
   return (
     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '1.5rem' }}>
       {Array.from({ length: total }, (_, i) => {
@@ -138,6 +138,67 @@ function StepNav({ onNext, onSkip, nextLabel = 'Continue →', showSkip = true }
 }
 
 // ── Step components ───────────────────────────────────────────────────────────
+
+function DomainStep({ onDomainSet }: { onDomainSet: (domainId: number) => void }) {
+  const [domain, setDomain] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const d = domain.toLowerCase().trim();
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)) {
+      setError('Enter a valid domain like yourdomain.com');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await setBaseDomain(d);
+      onDomainSet(result.domain_id);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to set domain');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={s.stepTitle}>What's your domain?</h2>
+      <p style={{ ...s.body, marginTop: '0.5rem' }}>
+        Enter the domain you want to monitor. InboxAngel will check its SPF, DKIM, and DMARC
+        records and collect aggregate reports.
+      </p>
+      <div style={{ marginTop: '1rem' }}>
+        <input
+          type="text"
+          placeholder="yourdomain.com"
+          value={domain}
+          onInput={e => setDomain((e.target as HTMLInputElement).value)}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          style={{
+            width: '100%', padding: '0.65rem 0.75rem',
+            border: '1.5px solid #d1d5db', borderRadius: '6px',
+            fontSize: '0.95rem', fontFamily: 'inherit', outline: 'none',
+            boxSizing: 'border-box',
+          }}
+          autoFocus
+        />
+      </div>
+      {error && <p style={s.error}>{error}</p>}
+      <div style={{ ...s.nav, marginTop: '1.5rem' }}>
+        <span />
+        <button
+          onClick={submit}
+          disabled={submitting || !domain.trim()}
+          style={{ ...s.nextBtn, opacity: submitting || !domain.trim() ? 0.6 : 1 }}
+        >
+          {submitting ? 'Setting up…' : 'Continue →'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SpfStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext: () => void; onSkip: () => void }) {
   const { spf } = status;
@@ -455,14 +516,32 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
         <p style={s.label}>Email destination</p>
         {current.destination_verified ? (
           <p style={s.body}>
-            <code style={s.inline}>{current.admin_email}</code> is verified as a Cloudflare Email Routing destination. Reports will be forwarded to you.
+            <code style={s.inline}>{current.admin_email}</code> is verified as a Cloudflare Email Routing destination. Alerts and password resets will work.
           </p>
         ) : (
           <>
             <p style={s.body}>
-              <code style={s.inline}>{current.admin_email ?? 'Your email'}</code> hasn't been verified as a Cloudflare Email Routing destination yet.
-              Check your inbox for a verification email from Cloudflare and click the link, then press "Re-check" below.
+              <code style={s.inline}>{current.admin_email ?? 'Your email'}</code> needs to be registered as a Cloudflare Email Routing destination
+              so InboxAngel can send you alerts and password reset emails.
             </p>
+            <button
+              onClick={async () => {
+                setSettingUp(true);
+                setSetupError(null);
+                try {
+                  await registerDestination();
+                  setSetupInfo('Verification email sent! Check your inbox and click the link from Cloudflare, then press "Re-check".');
+                } catch (e: any) {
+                  setSetupError(e.message ?? 'Failed to register destination');
+                } finally {
+                  setSettingUp(false);
+                }
+              }}
+              disabled={settingUp}
+              style={{ ...s.actionBtn, background: '#2563eb', opacity: settingUp ? 0.6 : 1, marginTop: '0.5rem' }}
+            >
+              {settingUp ? 'Registering…' : 'Register email destination'}
+            </button>
             {current.destination_debug && (
               <p style={{ ...s.body, fontSize: '0.8rem', color: '#9ca3af', marginTop: '0.25rem' }}>
                 Debug: {current.destination_debug}
@@ -496,9 +575,9 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
-const STEPS = ['SPF', 'DKIM', 'DMARC', 'Routing'];
-const STEP_KEYS: (keyof WizardState)[] = ['spf', 'dkim', 'dmarc', 'routing'];
-const DEFAULT_WIZARD: WizardState = { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+const STEPS = ['Domain', 'SPF', 'DKIM', 'DMARC', 'Routing'];
+const STEP_KEYS: (keyof WizardState)[] = ['domain', 'spf', 'dkim', 'dmarc', 'routing'];
+const DEFAULT_WIZARD: WizardState = { domain: 'not_started', spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
 
 export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?: number; initialStep?: number } = {}) {
   // Steps are 1-indexed in the URL, 0-indexed internally
@@ -509,6 +588,8 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
   const [wizardState, setWizardState] = useState<WizardState>(DEFAULT_WIZARD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // True when we're on the domain step (step 0) and no domain is set yet
+  const [needsDomain, setNeedsDomain] = useState(false);
 
   const setStep = (s: number | ((prev: number) => number)) => {
     setStepRaw(prev => {
@@ -526,9 +607,14 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
       try {
         let id = domainIdProp ?? null;
         if (!id) {
-          // No domain ID in URL — resolve from API and redirect
+          // No domain ID in URL — check if any domain exists
           const { domains } = await getDomains();
-          if (domains.length === 0) { done(); return; }
+          if (domains.length === 0) {
+            // No domain yet — show domain step
+            setNeedsDomain(true);
+            setLoading(false);
+            return;
+          }
           id = domains[0].id;
           // Redirect to proper URL
           window.location.hash = `#/domains/${id}/setup/1`;
@@ -546,11 +632,16 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
         setWizardState(wizardData);
 
         // Jump to first incomplete step on resume (unless URL specified a step)
+        // Skip step 0 (domain) if domain is already set
         if (initialStep === undefined) {
-          const firstIncomplete = STEP_KEYS.findIndex(k => wizardData[k] === 'not_started');
-          if (firstIncomplete > 0) {
-            setStepRaw(firstIncomplete);
-            window.location.hash = `#/domains/${id}/setup/${firstIncomplete + 1}`;
+          const firstIncomplete = STEP_KEYS.findIndex((k, i) => {
+            if (i === 0) return false; // domain step is done if we got here
+            return wizardData[k] === 'not_started';
+          });
+          const target = firstIncomplete > 0 ? firstIncomplete : 1; // skip domain step
+          if (target > 0) {
+            setStepRaw(target);
+            window.location.hash = `#/domains/${id}/setup/${target + 1}`;
           }
         }
       } catch (e: any) {
@@ -566,6 +657,28 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
     localStorage.setItem('ia_onboarding_done', '1');
     const id = domainId ?? domainIdProp;
     window.location.hash = id ? `#/domains/${id}` : '#/';
+  };
+
+  // Called when domain step completes — sets up domain and loads onboarding status
+  const handleDomainSet = async (newDomainId: number) => {
+    setDomainId(newDomainId);
+    setNeedsDomain(false);
+
+    // Mark domain step as complete
+    const updated = { ...wizardState, domain: 'complete' as WizardStepState };
+    setWizardState(updated);
+    updateWizardState(newDomainId, { domain: 'complete' }).catch(() => {});
+
+    // Load onboarding status for the new domain
+    try {
+      const statusData = await getOnboardingStatus(newDomainId);
+      setStatus(statusData);
+      // Advance to step 1 (SPF)
+      setStepRaw(1);
+      window.location.hash = `#/domains/${newDomainId}/setup/2`;
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to load domain status');
+    }
   };
 
   const markAndAdvance = async (state: WizardStepState) => {
@@ -596,6 +709,28 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
     </div>
   );
 
+  // Domain step — shown when no domain exists yet
+  if (needsDomain) {
+    return (
+      <div style={s.wrap}>
+        <div style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={s.logo}>InboxAngel</div>
+            <button onClick={done} style={s.skipLink}>Skip setup →</button>
+          </div>
+          <p style={{ ...s.body, margin: '0 0 0.25rem', color: '#6b7280' }}>
+            Let's get your email security set up
+          </p>
+          <p style={{ margin: '0 0 1.25rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+            Step 1 of {STEPS.length}
+          </p>
+          <StepProgress current={0} total={STEPS.length} wizardState={wizardState} />
+          <DomainStep onDomainSet={handleDomainSet} />
+        </div>
+      </div>
+    );
+  }
+
   if (error || !status) return (
     <div style={s.wrap}>
       <div style={s.card}>
@@ -621,10 +756,11 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
 
         <StepProgress current={step} total={STEPS.length} wizardState={wizardState} />
 
-        {step === 0 && <SpfStep status={status} onNext={handleNext} onSkip={handleSkip} />}
-        {step === 1 && <DkimStep status={status} onNext={handleNext} onSkip={handleSkip} />}
-        {step === 2 && <DmarcStep status={status} onNext={handleNext} onSkip={handleSkip} />}
-        {step === 3 && <RoutingStep status={status} onDone={handleNext} onSkip={handleSkip} />}
+        {step === 0 && <DomainStep onDomainSet={handleDomainSet} />}
+        {step === 1 && <SpfStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 2 && <DkimStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 3 && <DmarcStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 4 && <RoutingStep status={status} onDone={handleNext} onSkip={handleSkip} />}
       </div>
     </div>
   );

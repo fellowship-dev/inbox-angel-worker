@@ -67,6 +67,7 @@ import {
   getAllSources,
   getSetting,
   setSetting,
+  persistConfig,
   getMonitorSubsByDomain,
   setMonitorSubActive,
   setDomainAlertsEnabled,
@@ -82,26 +83,6 @@ import {
   insertPasswordResetToken,
   getPasswordResetToken,
   markResetTokenUsed,
-} from '../db/queries';
-import { hashPassword, verifyPassword } from './password';
-import { deprovisionDomain } from '../dns/provision';
-import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
-import { track } from '../telemetry';
-import { debug } from '../debug';
-import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId } from '../env-utils';
-import { logAudit } from '../audit/log';
-import { flattenSpf, restoreSpf } from '../email/spf-flattener';
-import { lookupSpf } from '../email/dns-check';
-import {
-  provisionMtaSts,
-  updateMtaStsTxtRecord,
-  deprovisionMtaSts,
-  discoverMxHosts,
-  generatePolicyId,
-  buildPolicyFile,
-  patchCfDnsRecord,
-} from '../email/mta-sts';
-import {
   getSpfFlattenConfig,
   upsertSpfFlattenConfig,
   updateSpfFlattenResult,
@@ -115,6 +96,23 @@ import {
   getTlsReportSummary,
   getAuditLog,
 } from '../db/queries';
+import { hashPassword, verifyPassword } from './password';
+import { deprovisionDomain } from '../dns/provision';
+import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
+import { track } from '../telemetry';
+import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
+import { logAudit } from '../audit/log';
+import { flattenSpf, restoreSpf } from '../email/spf-flattener';
+import { lookupSpf } from '../email/dns-check';
+import {
+  provisionMtaSts,
+  updateMtaStsTxtRecord,
+  deprovisionMtaSts,
+  discoverMxHosts,
+  generatePolicyId,
+  buildPolicyFile,
+  patchCfDnsRecord,
+} from '../email/mta-sts';
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -296,34 +294,6 @@ async function getReport(env: Env, reportId: string): Promise<Response> {
   return json({ report, records });
 }
 
-// ── Self-hosted lazy init ──────────────────────────────────────
-// When BASE_DOMAIN env var is set and no domain exists yet,
-// auto-provision on the first authenticated request — no bootstrap API call needed.
-
-async function ensureFirstDomainExists(env: Env): Promise<void> {
-  if (!env.BASE_DOMAIN) return; // no auto-init without BASE_DOMAIN
-
-  const { results } = await getAllDomains(env.DB);
-  if (results.length > 0) return; // already set up
-
-  const domain = env.BASE_DOMAIN.toLowerCase().trim();
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
-    console.warn('[init] BASE_DOMAIN is invalid, skipping auto-provision:', domain);
-    return;
-  }
-  const rd = reportsDomain(env);
-  if (!rd) {
-    console.warn('[init] REPORTS_DOMAIN is not set and BASE_DOMAIN is missing, skipping auto-provision');
-    return;
-  }
-
-  const ruaAddress = `rua@${rd}`;
-  // Insert domain row only — no DNS writes. The onboarding wizard handles all DNS provisioning
-  // with explicit user action (button press) per issue #8 consent rules.
-  await insertDomain(env.DB, { domain, rua_address: ruaAddress });
-  console.log(`[init] Domain ${domain} registered. DNS setup deferred to onboarding wizard.`);
-}
-
 async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
   try {
     const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
@@ -444,7 +414,7 @@ async function _handleApi(
   envRaw: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  const env = await enrichEnv(envRaw);
+  const env = await enrichEnv(envRaw, envRaw.DB);
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
   const path = url.pathname;
@@ -535,17 +505,21 @@ async function _handleApi(
   // GET /api/auth/status — any admin configured? + env prefill
   if (path === '/api/auth/status' && method === 'GET') {
     const admin = await env.DB!.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first();
-    const [tsKeyRow, customDomainRow] = await Promise.all([
+    const [tsKeyRow, customDomainRow, telemetryRow] = await Promise.all([
       getSetting(env.DB!, 'turnstile_site_key'),
       getSetting(env.DB!, 'custom_domain'),
+      getSetting(env.DB!, 'telemetry_opted_in'),
     ]);
+    const { results: existingDomains } = await getAllDomains(env.DB!);
+    const baseDomain = getBaseDomain();
     return json({
       configured: !!admin,
       prefill: { name: '', email: '' },
-      telemetry_default: env.TELEMETRY_ENABLED === 'true',
+      telemetry_default: telemetryRow?.value === 'true',
       turnstile_site_key: tsKeyRow?.value ?? null,
       custom_domain: customDomainRow?.value ?? null,
-      base_domain: env.BASE_DOMAIN ?? null,
+      base_domain: baseDomain ?? null,
+      has_domain: existingDomains.length > 0 || !!baseDomain,
     });
   }
 
@@ -591,14 +565,12 @@ async function _handleApi(
     }, ctx);
     track(env, { event: 'instance.born' }); // fire-and-forget
 
-    // Register user's email as a CF Email Routing destination so they only need to click a link
-    let email_verification_sent = false;
-    const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
-    if (env.CLOUDFLARE_API_TOKEN && accountId) {
-      email_verification_sent = await registerEmailRoutingDestination(env.CLOUDFLARE_API_TOKEN, accountId, email);
-    }
+    // Check if a domain is already configured (from env var or D1)
+    const baseDomain = getBaseDomain();
+    const { results: existingDomains } = await getAllDomains(env.DB!);
+    const has_domain = existingDomains.length > 0 || !!baseDomain;
 
-    return json({ token, email_verification_sent }, 201);
+    return json({ token, has_domain }, 201);
   }
 
   // POST /api/auth/login — verify password → new session token
@@ -786,17 +758,69 @@ async function _handleApi(
 
   try {
     await requireAuth(request, { ...env, API_KEY: effectiveApiKey });
-    debug(env, 'auth.ok', { method, path, mode: env.AUTH0_DOMAIN ? 'jwt' : 'api-key' });
   } catch (e) {
-    debug(env, 'auth.fail', { method, path, error: e instanceof Error ? e.message : String(e) });
     if (e instanceof AuthError) return err(e.message, e.status);
     return err('authentication error', 401);
   }
 
-  // Self-hosted lazy init — no-op when BASE_DOMAIN is unset
-  await ensureFirstDomainExists(env);
-
   try {
+    // POST /api/settings/base-domain — wizard step 0: set the base domain
+    if (path === '/api/settings/base-domain' && method === 'POST') {
+      const body = await parseBody<{ domain?: string }>(request);
+      if (!body.domain || typeof body.domain !== 'string') return err('domain is required', 400);
+
+      const domain = body.domain.toLowerCase().trim();
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return err('invalid domain format', 400);
+
+      // Persist base domain + derived values to D1
+      const rd = `reports.${domain}`;
+      const fe = `noreply@${rd}`;
+      const ruaAddress = `rua@${rd}`;
+      await persistConfig(env.DB!, {
+        base_domain: domain,
+        reports_domain: rd,
+        from_email: fe,
+      });
+
+      // Reset caches so enrichEnv picks up new values
+      resetEnvCache();
+      await enrichEnv(env, env.DB);
+
+      // Resolve zone_id + account_id from the new domain
+      const zoneId = getZoneId();
+      const accountId = getAccountId();
+      if (zoneId && accountId) {
+        await persistConfig(env.DB!, { zone_id: zoneId, account_id: accountId });
+      }
+
+      // Create the domain row if it doesn't exist yet
+      const existing = await getAllDomains(env.DB!);
+      const alreadyHas = existing.results.some(d => d.domain === domain);
+      let domainId: number | undefined;
+      if (!alreadyHas) {
+        const result = await insertDomain(env.DB!, { domain, rua_address: ruaAddress });
+        domainId = result.meta.last_row_id as number;
+        track(env, { event: 'domain.add' });
+        logAudit(env.DB!, {
+          actor_id: userBySession?.id ?? null, actor_email: userBySession?.email ?? null, actor_type: 'user',
+          action: 'domain.add',
+          resource_type: 'domain', resource_id: String(domainId), resource_name: domain,
+          after_value: { domain, rua_address: ruaAddress, source: 'wizard' },
+        }, ctx);
+      } else {
+        domainId = existing.results.find(d => d.domain === domain)?.id;
+      }
+
+      return json({
+        ok: true,
+        domain,
+        domain_id: domainId,
+        reports_domain: rd,
+        zone_id: zoneId ?? null,
+        account_id: accountId ?? null,
+      }, 201);
+    }
+
     // GET /api/domains
     if (path === '/api/domains' && method === 'GET') {
       return await getDomainsHandler(env);
@@ -1053,6 +1077,16 @@ async function _handleApi(
       return json({ ok: true, reports_domain: rd, status: result.status, detail: result.detail });
     }
 
+    // POST /api/settings/register-destination — register admin email as CF Email Routing destination
+    if (path === '/api/settings/register-destination' && method === 'POST') {
+      const accountId = getAccountId();
+      if (!env.CLOUDFLARE_API_TOKEN || !accountId) return err('Cloudflare credentials not configured', 400);
+      const admin = await env.DB!.prepare(`SELECT email FROM users WHERE role = 'admin' LIMIT 1`).first<{ email: string }>();
+      if (!admin?.email) return err('no admin email found', 400);
+      const sent = await registerEmailRoutingDestination(env.CLOUDFLARE_API_TOKEN, accountId, admin.email);
+      return json({ ok: true, email: admin.email, verification_sent: sent });
+    }
+
     // POST /api/domains/:id/apply-dmarc — create or update _dmarc.{domain} TXT in CF DNS
     const applyDmarcMatch = path.match(/^\/api\/domains\/([^/]+)\/apply-dmarc$/);
     if (applyDmarcMatch && method === 'POST') {
@@ -1104,7 +1138,7 @@ async function _handleApi(
     // POST /api/setup/custom-domain — register inbox-angel.{BASE_DOMAIN} as CF Custom Domain
     if (path === '/api/setup/custom-domain' && method === 'POST') {
       if (!env.CLOUDFLARE_API_TOKEN || !getZoneId()) return err('Cloudflare credentials not configured', 400);
-      const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
+      const accountId = getAccountId();
       if (!accountId) return err('Account ID not available', 400);
       if (!env.BASE_DOMAIN) return err('BASE_DOMAIN not configured', 400);
 
@@ -1141,7 +1175,8 @@ async function _handleApi(
       if (!domain) return err('domain not found', 404);
 
       const raw = await getSetting(env.DB, `wizard_state_${id}`);
-      const state = raw ? JSON.parse(raw.value) : { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+      const defaults = { domain: 'not_started', spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+      const state = raw ? { ...defaults, ...JSON.parse(raw.value) } : defaults;
       return json(state);
     }
 
@@ -1154,12 +1189,13 @@ async function _handleApi(
       if (!domain) return err('domain not found', 404);
 
       const body = await parseBody<Record<string, string>>(request);
-      const validSteps = ['spf', 'dkim', 'dmarc', 'routing'];
+      const validSteps = ['domain', 'spf', 'dkim', 'dmarc', 'routing'];
       const validStates = ['not_started', 'complete', 'skipped'];
 
       // Merge with existing state
       const raw = await getSetting(env.DB, `wizard_state_${id}`);
-      const current = raw ? JSON.parse(raw.value) : { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+      const defaults = { domain: 'not_started', spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+      const current = raw ? { ...defaults, ...JSON.parse(raw.value) } : defaults;
 
       for (const [step, state] of Object.entries(body)) {
         if (validSteps.includes(step) && validStates.includes(state)) {

@@ -354,6 +354,30 @@ export function setSetting(db: D1Database, key: string, value: string) {
   `).bind(key, value).run();
 }
 
+/**
+ * Batch-fetch multiple settings in a single D1 round-trip.
+ * Returns a Map<key, value> — missing keys are omitted.
+ */
+export async function getSettings(db: D1Database, keys: string[]): Promise<Map<string, string>> {
+  if (keys.length === 0) return new Map();
+  const placeholders = keys.map(() => '?').join(', ');
+  const { results } = await db.prepare(`SELECT key, value FROM settings WHERE key IN (${placeholders})`)
+    .bind(...keys).all<{ key: string; value: string }>();
+  return new Map(results.map(r => [r.key, r.value]));
+}
+
+/**
+ * Persist config values to D1 settings table.
+ * Upserts each key — safe to call multiple times.
+ */
+export async function persistConfig(db: D1Database, config: Record<string, string>): Promise<void> {
+  const stmt = db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()
+  `);
+  await db.batch(Object.entries(config).map(([k, v]) => stmt.bind(k, v)));
+}
+
 // ── Monitor Subscriptions (management) ───────────────────────
 
 export function getMonitorSubsByDomain(db: D1Database, domain: string) {

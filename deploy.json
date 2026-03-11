@@ -8,12 +8,8 @@
     "command": "npm install && npm install --prefix dashboard && npm run build:dashboard"
   },
   "env": {
-    "BASE_DOMAIN": {
-      "description": "Your root domain (e.g. yourdomain.com). Reports subdomain and sender address auto-derive from this.",
-      "required": true
-    },
     "CLOUDFLARE_API_TOKEN": {
-      "description": "Runtime API token with DNS:Edit + Email Routing:Edit permissions. NOT the deploy token — create a separate one. See README for required permissions.",
+      "description": "Runtime API token with Zone:Read + DNS:Edit + Email Routing:Edit permissions. See README for details.",
       "required": true,
       "secret": true
     }

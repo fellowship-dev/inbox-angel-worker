@@ -73,63 +73,37 @@ The Worker needs a token at runtime to manage Email Routing rules and DNS record
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Fellowship-dev/inbox-angel-worker)
 
-The button forks the repo, creates a D1 database, and prompts for secrets before deploying. The Worker auto-migrates the database schema on first request.
+The button forks the repo, creates a D1 database, and prompts for your API token. That's it — one secret, zero env vars.
 
 **Option B — CLI:**
 
 ```bash
 npm install && npm install --prefix dashboard
+wrangler secret put CLOUDFLARE_API_TOKEN  # the token you created above
 npm run deploy
 ```
 
-Edit `wrangler.jsonc` — update the worker name at the top, then set just two secrets:
-
-```bash
-wrangler secret put CLOUDFLARE_API_TOKEN  # the token you created above
-wrangler secret put BASE_DOMAIN           # your root domain, e.g. yourdomain.com
-```
-
-Everything else derives automatically:
-
-| Variable | Default |
-|---|---|
-| `REPORTS_DOMAIN` | `reports.<BASE_DOMAIN>` |
-| `FROM_EMAIL` | `noreply@reports.<BASE_DOMAIN>` |
-
-Override either with `wrangler secret put <NAME>` if you need different values.
+No `BASE_DOMAIN`, no `REPORTS_DOMAIN`, no zone IDs — the setup wizard handles all domain configuration after deploy.
 
 ---
 
 ### Step 2 — Create your account
 
-Open your worker URL. On first visit you'll see a setup form — enter your email and a password. Name is optional.
-
-On first domain add, the Worker automatically:
-- Enables Email Routing on your Cloudflare zone
-- Adds MX records for the reports subdomain
-- Sets the catch-all rule: `*@reports.yourdomain.com` → this Worker
-
-**Verify your email to receive alerts and password reset emails**
-
-InboxAngel sends email via Cloudflare's Email Workers `SEND_EMAIL` binding, which can only deliver to **verified destination addresses** in your Cloudflare zone's Email Routing settings.
-
-1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → your zone → **Email → Routing → Destinations**
-2. Click **Add destination** and enter your email address
-3. Click the verification link Cloudflare sends you
-
-Until this is done, password reset emails and monitoring alerts won't be delivered.
+Open your worker URL. On first visit you'll see a setup form — enter your email and a password.
 
 ---
 
-### Step 3 — Add your first domain
+### Step 3 — Set up your domain
 
-The dashboard shows your `rua` reporting address. Append it to your existing DMARC record — don't replace it:
+After creating your account, the setup wizard walks you through five steps:
 
-```
-_dmarc.yourdomain.com TXT "v=DMARC1; p=none; rua=mailto:<existing>,mailto:rua@reports.yourdomain.com"
-```
+1. **Domain** — enter your domain (e.g. `yourdomain.com`). Zone ID and account ID are auto-resolved from the Cloudflare API.
+2. **SPF** — checks your SPF record and lookup depth
+3. **DKIM** — scans for DKIM selectors
+4. **DMARC** — shows your current record and recommended changes. Can apply via Cloudflare DNS with one click.
+5. **Routing** — sets up MX records and email routing. Registers your email as a verified destination so you can receive alerts and password resets.
 
-Reports from receiving mail servers worldwide will start arriving within 24 hours. Once you have data, the dashboard shows your pass rate and tells you when it's safe to tighten policy toward `p=reject`.
+Reports from receiving mail servers worldwide will start arriving within 24 hours. The dashboard shows your pass rate and tells you when it's safe to tighten policy toward `p=reject`.
 
 ---
 

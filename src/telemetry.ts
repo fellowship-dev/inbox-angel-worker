@@ -1,5 +1,5 @@
 // Optional anonymous telemetry — disabled by default.
-// Set TELEMETRY_ENABLED=true to send anonymous usage events to InboxAngel.
+// Opt-in is stored in D1 settings table (key: telemetry_opted_in).
 //
 // What is collected:
 //   - Event type and typed properties (counts, statuses, version)
@@ -9,11 +9,11 @@
 //   - Timestamp (unix seconds)
 //
 // What is NOT collected: domain names, email addresses, IP addresses, report contents.
-//
-// To opt out permanently: set TELEMETRY_ENABLED=false (or leave it unset — default is off).
 
 import type { Env } from './index';
 import { version } from '../package.json';
+import { getAccountId } from './env-utils';
+import { getSetting } from './db/queries';
 
 const TELEMETRY_URL = 'https://telemetry.inboxangel.io/v1/events';
 
@@ -45,8 +45,20 @@ export type TelemetryProps =
   | { event: 'report.received'; failure_count: number }
   | { event: 'tls-rpt.received'; failure_count: number };
 
+// Module-level cache so we don't query D1 on every event
+let _telemetryEnabled: boolean | undefined;
+
+async function isTelemetryEnabled(env: Env): Promise<boolean> {
+  if (_telemetryEnabled !== undefined) return _telemetryEnabled;
+  if (!env.DB) { _telemetryEnabled = false; return false; }
+  const row = await getSetting(env.DB, 'telemetry_opted_in');
+  _telemetryEnabled = row?.value === 'true';
+  return _telemetryEnabled;
+}
+
 async function anonymousId(env: Env): Promise<string> {
-  const raw = `${env.CLOUDFLARE_ACCOUNT_ID ?? ''}:${env.WORKER_NAME ?? 'inbox-angel-worker'}`;
+  const accountId = getAccountId() ?? '';
+  const raw = `${accountId}:${env.WORKER_NAME ?? 'inbox-angel-worker'}`;
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   return Array.from(new Uint8Array(buf))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -55,7 +67,8 @@ async function anonymousId(env: Env): Promise<string> {
 }
 
 export async function track(env: Env, props: TelemetryProps): Promise<void> {
-  if (!env.TELEMETRY_ENABLED || env.TELEMETRY_ENABLED === 'false') return;
+  const enabled = await isTelemetryEnabled(env);
+  if (!enabled) return;
 
   try {
     const id = await anonymousId(env);
