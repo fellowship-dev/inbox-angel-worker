@@ -65,6 +65,7 @@ export async function enrichEnv(env: Env): Promise<Env> {
   if ((env as Record<string, unknown>).CLOUDFLARE_ACCOUNT_ID && !_accountIdCache) {
     _accountIdCache = (env as Record<string, unknown>).CLOUDFLARE_ACCOUNT_ID as string;
   }
-  if (!_zoneIdCache) await resolveZoneId(env);
+  // Always call resolveZoneId if either cache is missing — it populates both from one API call
+  if (!_zoneIdCache || !_accountIdCache) await resolveZoneId(env);
   return env;
 }

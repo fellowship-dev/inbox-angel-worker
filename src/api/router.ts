@@ -53,7 +53,6 @@ import {
   getDomainsByCustomer,
   getDomainById,
   insertDomain,
-  updateDomainDnsRecord,
   updateDomainDmarcPolicy,
   updateDomainSpfLookupCount,
   getRecentReports,
@@ -86,8 +85,7 @@ import {
   markResetTokenUsed,
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
-import type { DnsProvisionResult } from '../dns/provision';
-import { provisionDomain, deprovisionDomain, DnsProvisionError } from '../dns/provision';
+import { deprovisionDomain } from '../dns/provision';
 import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
 import { track } from '../telemetry';
 import { debug } from '../debug';
@@ -175,52 +173,20 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
   const rdomain = reportsDomain(env);
   if (!rdomain) return err('REPORTS_DOMAIN is not configured', 500);
 
-  // On first domain add, auto-configure email routing (idempotent)
-  const { results: existing } = await getDomainsByCustomer(env.DB, customerId);
-  if (existing.length === 0) {
-    debug(env, 'domain.add', { step: 'email-routing-setup', firstDomain: true });
-    await ensureEmailRouting(env).catch(e => {
-      debug(env, 'domain.add', { step: 'email-routing-setup', error: e instanceof Error ? e.message : String(e) });
-      console.error('[setup] email routing setup failed (non-fatal):', e);
-    });
-  }
-
   // Fixed rua address — routing is by XML policy_domain, not by address encoding
   const ruaAddress = `rua@${rdomain}`;
 
-  // Provision the cross-domain DMARC authorization record.
-  // If CF creds are absent, returns manual mode — caller gets instructions instead of auto-record.
-  // If CF creds present but API fails, bail before touching the DB.
-  let provision: DnsProvisionResult;
-  try {
-    provision = await provisionDomain(env, domain);
-    debug(env, 'domain.add', { step: 'dns-provision', domain, manual: provision.manual, recordName: provision.recordName });
-  } catch (e) {
-    if (e instanceof DnsProvisionError) {
-      debug(env, 'domain.add', { step: 'dns-provision', error: e.message });
-      console.error('DNS provision failed:', e.message);
-      return err('DNS provisioning failed — check Cloudflare credentials', 502);
-    }
-    throw e;
-  }
+  // Compute the auth record name (but do NOT create it — wizard handles DNS provisioning)
+  const authRecordName = `${domain}._report._dmarc.${rdomain}`;
 
-  // Insert domain row
+  // Insert domain row — no DNS writes here; all DNS changes require explicit user action
   let domainId: number;
   try {
     const result = await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
     domainId = result.meta.last_row_id as number;
   } catch (e: any) {
-    // Rollback: clean up the DNS record we just created (no-op in manual mode)
-    if (provision.recordId) await deprovisionDomain(env, provision.recordId).catch(() => {});
     if (e?.message?.includes('UNIQUE')) return err('domain already registered', 409);
     throw e;
-  }
-
-  // Record the CF DNS record ID for future cleanup (only when auto-provisioned)
-  if (provision.recordId) {
-    await updateDomainDnsRecord(env.DB, domainId, provision.recordId).catch(e =>
-      console.warn('updateDomainDnsRecord failed (non-fatal):', e)
-    );
   }
 
   track(env, { event: 'domain.add' }); // fire-and-forget, non-blocking
@@ -232,16 +198,6 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
     resource_type: 'domain', resource_id: String(domainId), resource_name: domain,
     after_value: { domain, rua_address: ruaAddress },
   }, ctx);
-
-  if (!provision.manual && provision.recordId) {
-    logAudit(env.DB!, {
-      customer_id: customerId,
-      actor_id: actorId ?? null, actor_email: userEmail ?? null, actor_type: 'user',
-      action: 'dns.create',
-      resource_type: 'dns_record', resource_id: provision.recordId, resource_name: provision.recordName,
-      after_value: { type: 'TXT', name: provision.recordName, content: 'v=DMARC1;', ttl: 3600 },
-    }, ctx);
-  }
 
   // Auto-subscribe the adding user to monitoring alerts
   const email = userEmail;
@@ -273,16 +229,12 @@ async function addDomain(request: Request, env: Env, customerId: string, userEma
   // Return the full domain row so the frontend has the ID
   const domainRow = await getDomainById(env.DB, domainId);
 
-  const response: Record<string, unknown> = {
+  return json({
     domain: domainRow,
     rua_hint: `Add rua=mailto:${ruaAddress} to your DMARC record`,
-    auth_record: provision.recordName,
-  };
-  if (provision.manual) {
-    response.manual_dns = true;
-    response.dns_instructions = `Add this TXT record to authorize DMARC reports:\n  ${provision.recordName}  TXT  "v=DMARC1;"`;
-  }
-  return json(response, 201);
+    auth_record: authRecordName,
+    dns_instructions: `Add this TXT record to authorize DMARC reports:\n  ${authRecordName}  TXT  "v=DMARC1;"`,
+  }, 201);
 }
 
 async function deleteDomain(env: Env, customerId: string, domainId: string, actor?: { id?: string; email?: string }, ctx?: ExecutionContext): Promise<Response> {
@@ -383,18 +335,10 @@ async function ensureCustomerExists(env: Env, _customerId: string): Promise<void
   });
 
   const ruaAddress = `rua@${rd}`;
-  const provision = await provisionDomain({ ...env, REPORTS_DOMAIN: rd }, domain);
-  const result = await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
-
-  if (provision.recordId) {
-    await updateDomainDnsRecord(env.DB, result.meta.last_row_id as number, provision.recordId).catch(() => {});
-  }
-
-  if (provision.manual) {
-    console.log(`[init] Domain provisioned. Add this DNS record manually:\n  ${provision.recordName}  TXT  "v=DMARC1;"`);
-  } else {
-    console.log(`[init] Domain provisioned with DNS record: ${provision.recordName}`);
-  }
+  // Insert domain row only — no DNS writes. The onboarding wizard handles all DNS provisioning
+  // with explicit user action (button press) per issue #8 consent rules.
+  await insertDomain(env.DB, { customer_id: customerId, domain, rua_address: ruaAddress });
+  console.log(`[init] Domain ${domain} registered. DNS setup deferred to onboarding wizard.`);
 
 }
 
@@ -1038,20 +982,17 @@ async function _handleApi(
 
           // Check if the admin's email is verified as a CF Email Routing destination
           let destination_verified = false;
-          let admin_email: string | null = null;
-          const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
-          if (env.CLOUDFLARE_API_TOKEN && accountId) {
+          const admin = await env.DB!.prepare(`SELECT email FROM users WHERE role = 'admin' LIMIT 1`).first<{ email: string }>();
+          const admin_email = admin?.email ?? null;
+          const accountId = getAccountId();
+          if (env.CLOUDFLARE_API_TOKEN && accountId && admin?.email) {
             try {
-              const admin = await env.DB!.prepare(`SELECT email FROM users WHERE role = 'admin' LIMIT 1`).first<{ email: string }>();
-              admin_email = admin?.email ?? null;
-              if (admin?.email) {
-                const destRes = await fetch(
-                  `https://api.cloudflare.com/client/v4/accounts/${accountId}/email/routing/addresses`,
-                  { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` } }
-                );
-                const destData = await destRes.json() as { result?: { email: string; verified?: string }[] };
-                destination_verified = destData.result?.some(d => d.email === admin.email && d.verified) ?? false;
-              }
+              const destRes = await fetch(
+                `https://api.cloudflare.com/client/v4/accounts/${accountId}/email/routing/addresses`,
+                { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` } }
+              );
+              const destData = await destRes.json() as { result?: { email: string; verified?: string }[] };
+              destination_verified = destData.result?.some(d => d.email === admin.email && d.verified) ?? false;
             } catch {}
           }
 
@@ -1105,7 +1046,11 @@ async function _handleApi(
       const rd = reportsDomain(env);
       if (!rd) return err('REPORTS_DOMAIN not configured', 400);
 
-      await ensureEmailRouting(env);
+      try {
+        await ensureEmailRouting(env);
+      } catch (e: any) {
+        return err(e.message ?? 'Email routing setup failed', 500);
+      }
       logAudit(env.DB!, {
         customer_id: customerId,
         actor_id: userBySession?.id ?? null, actor_email: userBySession?.email ?? null, actor_type: 'user',

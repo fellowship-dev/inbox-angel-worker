@@ -102,8 +102,7 @@ export async function ensureEmailRouting(env: Env): Promise<void> {
   const apexMx = allMx.filter(r => r.name === apex);
 
   if (apexMx.length === 0) {
-    console.warn('[setup] no apex MX records found — Email Routing may still be initialising, retry by adding another domain');
-    return;
+    throw new Error(`No apex MX records found for ${apex}. Email Routing may still be initialising on your zone — try again in a minute.`);
   }
 
   const existingMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', `/dns/records?type=MX&name=${domain}`);
