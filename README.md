@@ -56,7 +56,7 @@ The Worker needs a token at runtime to manage Email Routing rules and DNS record
 |---|---|---|
 | Account | Account Settings | Read |
 | Account | Email Sending | Edit |
-| Account | Email Routing Addresses | Write |
+| Account | Email Routing Addresses | Edit |
 | Zone | Zone | Read |
 | Zone | Email Routing Rules | Edit |
 | Zone | DNS | Edit |

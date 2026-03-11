@@ -86,48 +86,64 @@ export async function ensureEmailRouting(env: Env): Promise<EmailRoutingResult> 
     return { status: 'skipped', detail: 'Cloudflare credentials or reports domain not configured' };
   }
 
-  // Step 1: Skip if catch-all rule already points to a worker
+  // Step 1: Check if catch-all rule already points to a worker
+  let catchAllActive = false;
   try {
     const catchAll = await cfFetch<EmailRule>(token, zoneId, 'GET', '/email/routing/rules/catch_all');
-    if (catchAll?.enabled && catchAll.actions.some(a => a.type === 'worker')) {
-      console.log('[setup] email routing already configured — skipping');
-      return { status: 'already_configured', detail: 'Email routing catch-all rule already active' };
-    }
+    catchAllActive = !!(catchAll?.enabled && catchAll.actions.some(a => a.type === 'worker'));
   } catch {
-    // catch_all rule doesn't exist yet — continue with setup
+    // catch_all rule doesn't exist yet — will create below
   }
 
-  // Step 2: Enable Email Routing on the zone
-  await cfFetch(token, zoneId, 'PUT', '/email/routing/enable');
-  console.log('[setup] email routing enabled');
-
-  // Step 3: Clone apex MX records to REPORTS_DOMAIN subdomain
-  const allMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', '/dns/records?type=MX');
-  const apex = domain.split('.').slice(-2).join('.');
-  const apexMx = allMx.filter(r => r.name === apex);
-
-  if (apexMx.length === 0) {
-    throw new Error(`No apex MX records found for ${apex}. Email Routing may still be initialising on your zone — try again in a minute.`);
+  // Step 2: Enable Email Routing on the zone (best-effort — may already be enabled,
+  // and the /enable endpoint requires a broader permission than Email Routing Rules)
+  if (!catchAllActive) {
+    try {
+      await cfFetch(token, zoneId, 'PUT', '/email/routing/enable');
+      console.log('[setup] email routing enabled');
+    } catch (e) {
+      console.log(`[setup] email routing enable skipped (likely already active): ${e instanceof Error ? e.message : e}`);
+    }
   }
 
-  const existingMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', `/dns/records?type=MX&name=${domain}`);
+  // Step 3: Ensure MX records exist for REPORTS_DOMAIN subdomain (always runs)
+  let mxCreated = false;
+  const existingMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', `/dns_records?type=MX&name=${domain}`);
   if (existingMx.length === 0) {
+    const allMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', '/dns_records?type=MX');
+    const apex = domain.split('.').slice(-2).join('.');
+    const apexMx = allMx.filter(r => r.name === apex);
+
+    if (apexMx.length === 0) {
+      throw new Error(`No apex MX records found for ${apex}. Email Routing may still be initialising on your zone — try again in a minute.`);
+    }
+
     const subdomain = domain.split('.')[0];
     for (const mx of apexMx) {
-      await cfFetch(token, zoneId, 'POST', '/dns/records', {
+      await cfFetch(token, zoneId, 'POST', '/dns_records', {
         type: 'MX', name: subdomain, content: mx.content, priority: mx.priority, ttl: 1,
       });
     }
     console.log(`[setup] MX records added for ${domain}`);
+    mxCreated = true;
   }
 
-  // Step 4: Set catch-all rule → this Worker
-  await cfFetch(token, zoneId, 'PUT', '/email/routing/rules/catch_all', {
-    actions: [{ type: 'worker', value: [workerName] }],
-    enabled: true,
-    matchers: [{ type: 'all' }],
-    name: `catch-all → ${workerName}`,
-  });
-  console.log(`[setup] catch-all rule set → ${workerName}`);
-  return { status: 'newly_configured', detail: `MX records + catch-all rule configured for ${domain}` };
+  // If catch-all was already active and MX records existed, nothing to do
+  if (catchAllActive && !mxCreated) {
+    return { status: 'already_configured', detail: 'Email routing catch-all rule and MX records already active' };
+  }
+
+  // Step 4: Set catch-all rule → this Worker (skip if already active)
+  if (!catchAllActive) {
+    await cfFetch(token, zoneId, 'PUT', '/email/routing/rules/catch_all', {
+      actions: [{ type: 'worker', value: [workerName] }],
+      enabled: true,
+      matchers: [{ type: 'all' }],
+      name: `catch-all → ${workerName}`,
+    });
+    console.log(`[setup] catch-all rule set → ${workerName}`);
+  }
+
+  const parts = [mxCreated ? 'MX records created' : null, !catchAllActive ? 'catch-all rule set' : null].filter(Boolean);
+  return { status: 'newly_configured', detail: `${parts.join(' + ')} for ${domain}` };
 }

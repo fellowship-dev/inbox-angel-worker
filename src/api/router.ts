@@ -1068,7 +1068,7 @@ async function _handleApi(
 
       let result;
       try {
-        result = await ensureEmailRouting(env);
+        result = await ensureEmailRouting({ ...env, REPORTS_DOMAIN: rd });
       } catch (e: any) {
         return err(e.message ?? 'Email routing setup failed', 500);
       }
