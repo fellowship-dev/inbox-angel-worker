@@ -252,6 +252,12 @@ export async function logout(): Promise<void> {
   localStorage.removeItem('ia_api_key');
 }
 
+export async function setupCustomDomain(): Promise<{ ok: boolean; hostname: string }> {
+  const res = await apiFetch('/api/setup/custom-domain', { method: 'POST' });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function getOnboardingStatus(domainId: number): Promise<import('./types').OnboardingStatus> {
   const res = await apiFetch(`/api/domains/${domainId}/onboarding-status`);
   if (!res.ok) await throwApiError(res);

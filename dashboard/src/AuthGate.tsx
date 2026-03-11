@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { setupCustomDomain } from './api';
 
 interface AuthStatus {
   configured: boolean;
@@ -55,6 +56,144 @@ function loadTurnstileScript() {
   s.async = true;
   s.setAttribute('data-cf-turnstile', '1');
   document.head.appendChild(s);
+}
+
+function SetupDone({ email, emailVerificationSent, onContinue }: {
+  email: string;
+  emailVerificationSent: boolean;
+  onContinue: () => void;
+}) {
+  const [phase, setPhase] = useState<'email' | 'custom-domain'>('email');
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [hostname, setHostname] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then(r => r.json() as Promise<{ custom_domain?: string | null; base_domain?: string | null }>)
+      .then(d => {
+        if (d.custom_domain) setHostname(d.custom_domain);
+        else if (d.base_domain) setHostname(`inbox-angel.${d.base_domain}`);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (countdown === null || !hostname) return;
+    if (countdown <= 0) {
+      window.location.href = `https://${hostname}/#/onboarding`;
+      return;
+    }
+    const t = setTimeout(() => setCountdown(c => (c ?? 1) - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown, hostname]);
+
+  const provision = async () => {
+    setProvisioning(true);
+    setProvisionError(null);
+    try {
+      const result = await setupCustomDomain();
+      setHostname(result.hostname);
+      setCountdown(5);
+    } catch (e: any) {
+      setProvisionError(e.message ?? 'Failed to set up custom domain');
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  if (phase === 'email') {
+    return (
+      <div style={s.wrap}>
+        <div style={s.box}>
+          <div style={s.logo}>🪄 InboxAngel</div>
+          <div style={s.successBadge}>✓ Account created</div>
+          <h1 style={s.title}>One more thing</h1>
+          {emailVerificationSent ? (
+            <>
+              <p style={s.subtitle}>
+                We've asked Cloudflare to send a verification email to <strong>{email}</strong>.
+              </p>
+              <div style={s.notice}>
+                <strong>Why?</strong> InboxAngel sends monitoring alerts and password reset emails
+                through Cloudflare Email Workers. Cloudflare requires destination addresses to be
+                verified once — this is the only step they put in your way.
+              </div>
+              <p style={s.muted}>Click the link in that email, then you're fully set up. You can continue to the dashboard in the meantime.</p>
+            </>
+          ) : (
+            <>
+              <p style={s.subtitle}>
+                To receive <strong>password reset emails</strong> and <strong>monitoring alerts</strong>,
+                you need to verify your email as a destination in Cloudflare Email Routing.
+              </p>
+              <div style={s.notice}>
+                <strong>Why?</strong> InboxAngel sends emails via Cloudflare's Email Workers
+                binding (<code style={s.code}>SEND_EMAIL</code>), which can only deliver to
+                verified destination addresses — this is a Cloudflare platform requirement,
+                not something we can bypass.
+              </div>
+              <ol style={s.steps}>
+                <li>Go to <strong>Cloudflare Dashboard → your zone → Email → Routing → Destinations</strong></li>
+                <li>Click <strong>Add destination</strong> and enter <code style={s.code}>{email}</code></li>
+                <li>Check your inbox and click the verification link Cloudflare sends</li>
+              </ol>
+              <p style={s.muted}>You can skip this for now and verify later — just know you won't receive emails until it's done.</p>
+            </>
+          )}
+          <button type="button" style={s.btn} onClick={() => setPhase('custom-domain')}>
+            Continue →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase 2: custom domain setup
+  return (
+    <div style={s.wrap}>
+      <div style={s.box}>
+        <div style={s.logo}>🪄 InboxAngel</div>
+        <h1 style={s.title}>Custom domain</h1>
+        <p style={s.subtitle}>
+          Access your dashboard at a clean URL instead of the default workers.dev address.
+        </p>
+
+        {countdown !== null && hostname ? (
+          <div style={{
+            background: '#dcfce7', border: '1px solid #bbf7d0',
+            borderRadius: '8px', padding: '1rem', textAlign: 'center',
+          }}>
+            <p style={{ margin: 0, fontSize: '0.95rem', color: '#15803d', fontWeight: 600 }}>
+              Custom domain is live!
+            </p>
+            <p style={{ margin: '0.25rem 0 0', fontFamily: 'monospace', fontSize: '0.9rem', color: '#166534' }}>
+              {hostname}
+            </p>
+            <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: '#166534' }}>
+              Redirecting in {countdown}s…
+            </p>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={provision}
+              disabled={provisioning}
+              style={{ ...s.btn, opacity: provisioning ? 0.6 : 1 }}
+            >
+              {provisioning ? 'Setting up…' : 'Set up custom domain'}
+            </button>
+            {provisionError && <p style={{ ...s.error, marginTop: '0.5rem' }}>{provisionError}</p>}
+            <button type="button" onClick={onContinue} style={s.link}>
+              Skip for now →
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function AuthGate({ onSave }: Props) {
@@ -203,53 +342,14 @@ export function AuthGate({ onSave }: Props) {
   }
 
   if (view === 'setup-done') {
-    return (
-      <div style={s.wrap}>
-        <div style={s.box}>
-          <div style={s.logo}>🪄 InboxAngel</div>
-          <div style={s.successBadge}>✓ Account created</div>
-          <h1 style={s.title}>One more thing</h1>
-          {emailVerificationSent ? (
-            <>
-              <p style={s.subtitle}>
-                We've asked Cloudflare to send a verification email to <strong>{email}</strong>.
-              </p>
-              <div style={s.notice}>
-                <strong>Why?</strong> InboxAngel sends monitoring alerts and password reset emails
-                through Cloudflare Email Workers. Cloudflare requires destination addresses to be
-                verified once — this is the only step they put in your way.
-              </div>
-              <p style={s.muted}>Click the link in that email, then you're fully set up. You can continue to the dashboard in the meantime.</p>
-            </>
-          ) : (
-            <>
-              <p style={s.subtitle}>
-                To receive <strong>password reset emails</strong> and <strong>monitoring alerts</strong>,
-                you need to verify your email as a destination in Cloudflare Email Routing.
-              </p>
-              <div style={s.notice}>
-                <strong>Why?</strong> InboxAngel sends emails via Cloudflare's Email Workers
-                binding (<code style={s.code}>SEND_EMAIL</code>), which can only deliver to
-                verified destination addresses — this is a Cloudflare platform requirement,
-                not something we can bypass.
-              </div>
-              <ol style={s.steps}>
-                <li>Go to <strong>Cloudflare Dashboard → your zone → Email → Routing → Destinations</strong></li>
-                <li>Click <strong>Add destination</strong> and enter <code style={s.code}>{email}</code></li>
-                <li>Check your inbox and click the verification link Cloudflare sends</li>
-              </ol>
-              <p style={s.muted}>You can skip this for now and verify later — just know you won't receive emails until it's done.</p>
-            </>
-          )}
-          <button type="button" style={s.btn} onClick={() => {
-            window.location.hash = '#/onboarding';
-            onSave(pendingToken);
-          }}>
-            Set up your domain →
-          </button>
-        </div>
-      </div>
-    );
+    return <SetupDone
+      email={email}
+      emailVerificationSent={emailVerificationSent}
+      onContinue={() => {
+        window.location.hash = '#/onboarding';
+        onSave(pendingToken);
+      }}
+    />;
   }
 
   const isSetup = !status.configured;

@@ -73,7 +73,7 @@
 		{
 			"binding": "DB",
 			"database_name": "inbox-angel",      // ← step 3a: change to your DB name
-			"database_id": "YOUR_DATABASE_ID",   // ← step 3b: from: wrangler d1 create <name>
+			"database_id": "bd4d10d0-aebe-4183-aded-7d15d6ecbcb9",   // ← step 3b: from: wrangler d1 create <name>
 			"migrations_dir": "migrations"
 		}
 	],
@@ -124,7 +124,7 @@
 		"WORKER_NAME": "inbox-angel-worker",  // must match the "name" field above
 		"TELEMETRY_ENABLED": "false",         // set to "true" to send anonymous usage stats
 		"DEBUG": "false",                     // set to "true" for verbose logs in CF Workers Logs
-		"BASE_DOMAIN": ""                     // required — e.g. "yourdomain.com"
+		"BASE_DOMAIN": "fellowship.dev"       // required — e.g. "yourdomain.com"
 		// Required secret: CLOUDFLARE_API_TOKEN (see README for token permissions)
 		// Optional overrides (wrangler secret put <NAME>):
 		//   REPORTS_DOMAIN  — override reports subdomain (defaults to reports.<BASE_DOMAIN>)

@@ -396,56 +396,6 @@ async function ensureCustomerExists(env: Env, _customerId: string): Promise<void
     console.log(`[init] Domain provisioned with DNS record: ${provision.recordName}`);
   }
 
-  // Provision inbox-angel.<BASE_DOMAIN> as a CF Custom Domain for this Worker
-  if (env.CLOUDFLARE_API_TOKEN && getZoneId()) {
-    try {
-      const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
-
-      if (accountId) {
-        const workerName = env.WORKER_NAME ?? 'inbox-angel-worker';
-        const hostname = `inbox-angel.${domain}`;
-        const domainRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/domains`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ environment: 'production', hostname, service: workerName, zone_id: getZoneId() }),
-        });
-        const domainData = await domainRes.json() as { success: boolean; errors?: { message: string }[] };
-        if (domainData.success) {
-          await setSetting(env.DB, 'custom_domain', hostname);
-          console.log(`[init] Custom domain registered: ${hostname}`);
-        } else {
-          console.warn('[init] Custom domain registration failed:', domainData.errors);
-        }
-
-        // Provision Turnstile widget for the login form (non-fatal)
-        try {
-          const existing = await getSetting(env.DB, 'turnstile_site_key');
-          if (!existing) {
-            const tsRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/challenges/widgets`, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: 'InboxAngel login',
-                domains: [hostname],
-                mode: 'managed',
-                bot_fight_mode: false,
-              }),
-            });
-            const tsData = await tsRes.json() as { result?: { sitekey: string; secret: string } };
-            if (tsData.result?.sitekey && tsData.result?.secret) {
-              await setSetting(env.DB, 'turnstile_site_key', tsData.result.sitekey);
-              await setSetting(env.DB, 'turnstile_secret_key', tsData.result.secret);
-              console.log('[init] Turnstile widget provisioned');
-            }
-          }
-        } catch (e) {
-          console.warn('[init] Turnstile provisioning failed (non-fatal):', e);
-        }
-      }
-    } catch (e) {
-      console.warn('[init] Custom domain provisioning failed (non-fatal):', e);
-    }
-  }
 }
 
 async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
@@ -670,6 +620,7 @@ async function _handleApi(
       telemetry_default: env.TELEMETRY_ENABLED === 'true',
       turnstile_site_key: tsKeyRow?.value ?? null,
       custom_domain: customDomainRow?.value ?? null,
+      base_domain: env.BASE_DOMAIN ?? null,
     });
   }
 
@@ -1193,6 +1144,38 @@ async function _handleApi(
       }, ctx);
 
       return json({ ok: true, record: body.record, created: !existingId });
+    }
+
+    // POST /api/setup/custom-domain — register inbox-angel.{BASE_DOMAIN} as CF Custom Domain
+    if (path === '/api/setup/custom-domain' && method === 'POST') {
+      if (!env.CLOUDFLARE_API_TOKEN || !getZoneId()) return err('Cloudflare credentials not configured', 400);
+      const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
+      if (!accountId) return err('Account ID not available', 400);
+      if (!env.BASE_DOMAIN) return err('BASE_DOMAIN not configured', 400);
+
+      const workerName = env.WORKER_NAME ?? 'inbox-angel-worker';
+      const hostname = `inbox-angel.${env.BASE_DOMAIN}`;
+
+      const domainRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/domains`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ environment: 'production', hostname, service: workerName, zone_id: getZoneId() }),
+      });
+      const domainData = await domainRes.json() as { success: boolean; errors?: { message: string }[] };
+      if (!domainData.success) {
+        const msg = domainData.errors?.map(e => e.message).join(', ') ?? 'Failed to register custom domain';
+        return err(msg, 502);
+      }
+
+      await setSetting(env.DB!, 'custom_domain', hostname);
+      logAudit(env.DB!, {
+        customer_id: customerId,
+        actor_id: userBySession?.id ?? null, actor_email: userBySession?.email ?? null, actor_type: 'user',
+        action: 'setup.custom_domain',
+        resource_type: 'custom_domain', resource_id: hostname, resource_name: hostname,
+      }, ctx);
+
+      return json({ ok: true, hostname });
     }
 
     // GET /api/domains/:id/wizard-state — per-step completion state for onboarding wizard
