@@ -1076,13 +1076,34 @@ async function _handleApi(
           })
           .catch(() => ({ found: false, has_our_rua: false, current_record: null })),
 
-        // Routing: MX check on reports domain
-        rd
-          ? fetch(`https://cloudflare-dns.com/dns-query?name=${rd}&type=MX`, { headers: { Accept: 'application/dns-json' } })
-              .then(r => r.json() as Promise<{ Answer?: unknown[] }>)
-              .then(d => ({ mx_found: (d.Answer ?? []).length > 0 }))
-              .catch(() => ({ mx_found: false }))
-          : Promise.resolve({ mx_found: false }),
+        // Routing: MX check + destination email verification
+        (async () => {
+          const mxResult = rd
+            ? await fetch(`https://cloudflare-dns.com/dns-query?name=${rd}&type=MX`, { headers: { Accept: 'application/dns-json' } })
+                .then(r => r.json() as Promise<{ Answer?: unknown[] }>)
+                .then(d => ({ mx_found: (d.Answer ?? []).length > 0 }))
+                .catch(() => ({ mx_found: false }))
+            : { mx_found: false };
+
+          // Check if the admin's email is verified as a CF Email Routing destination
+          let destination_verified = false;
+          const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
+          if (env.CLOUDFLARE_API_TOKEN && accountId) {
+            try {
+              const admin = await env.DB!.prepare(`SELECT email FROM users WHERE role = 'admin' LIMIT 1`).first<{ email: string }>();
+              if (admin?.email) {
+                const destRes = await fetch(
+                  `https://api.cloudflare.com/client/v4/accounts/${accountId}/email/routing/addresses`,
+                  { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` } }
+                );
+                const destData = await destRes.json() as { result?: { email: string; verified?: string }[] };
+                destination_verified = destData.result?.some(d => d.email === admin.email && d.verified) ?? false;
+              }
+            } catch {}
+          }
+
+          return { ...mxResult, destination_verified };
+        })(),
 
         // DKIM: CF API if available (full zone scan), else DoH for common selectors
         (async () => {
@@ -1172,6 +1193,45 @@ async function _handleApi(
       }, ctx);
 
       return json({ ok: true, record: body.record, created: !existingId });
+    }
+
+    // GET /api/domains/:id/wizard-state — per-step completion state for onboarding wizard
+    const wizardGetMatch = path.match(/^\/api\/domains\/([^/]+)\/wizard-state$/);
+    if (wizardGetMatch && method === 'GET') {
+      const id = parseInt(wizardGetMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+
+      const raw = await getSetting(env.DB, `wizard_state_${id}`);
+      const state = raw ? JSON.parse(raw.value) : { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+      return json(state);
+    }
+
+    // PUT /api/domains/:id/wizard-state — update step completion states
+    const wizardPutMatch = path.match(/^\/api\/domains\/([^/]+)\/wizard-state$/);
+    if (wizardPutMatch && method === 'PUT') {
+      const id = parseInt(wizardPutMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain || domain.customer_id !== customerId) return err('domain not found', 404);
+
+      const body = await parseBody<Record<string, string>>(request);
+      const validSteps = ['spf', 'dkim', 'dmarc', 'routing'];
+      const validStates = ['not_started', 'complete', 'skipped'];
+
+      // Merge with existing state
+      const raw = await getSetting(env.DB, `wizard_state_${id}`);
+      const current = raw ? JSON.parse(raw.value) : { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
+
+      for (const [step, state] of Object.entries(body)) {
+        if (validSteps.includes(step) && validStates.includes(state)) {
+          current[step] = state;
+        }
+      }
+
+      await setSetting(env.DB, `wizard_state_${id}`, JSON.stringify(current));
+      return json(current);
     }
 
     // DELETE /api/domains/:id

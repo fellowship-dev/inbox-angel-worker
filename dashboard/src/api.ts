@@ -263,3 +263,15 @@ export async function applyDmarc(domainId: number, record: string): Promise<{ ok
   if (!res.ok) await throwApiError(res);
   return res.json();
 }
+
+export async function getWizardState(domainId: number): Promise<import('./types').WizardState> {
+  const res = await apiFetch(`/api/domains/${domainId}/wizard-state`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function updateWizardState(domainId: number, updates: Partial<import('./types').WizardState>): Promise<import('./types').WizardState> {
+  const res = await apiFetch(`/api/domains/${domainId}/wizard-state`, { method: 'PUT', body: JSON.stringify(updates) });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}

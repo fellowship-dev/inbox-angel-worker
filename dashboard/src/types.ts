@@ -181,6 +181,16 @@ export interface OnboardingStatus {
   };
   routing: {
     mx_found: boolean;
+    destination_verified: boolean;
     reports_domain: string | null;
   };
+}
+
+export type WizardStepState = 'not_started' | 'complete' | 'skipped';
+
+export interface WizardState {
+  spf: WizardStepState;
+  dkim: WizardStepState;
+  dmarc: WizardStepState;
+  routing: WizardStepState;
 }

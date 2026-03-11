@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getDomains, getOnboardingStatus, applyDmarc, enableSpfFlatten } from '../api';
-import type { OnboardingStatus } from '../types';
+import { getDomains, getOnboardingStatus, applyDmarc, getWizardState, updateWizardState } from '../api';
+import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
 
 type Severity = 'good' | 'info' | 'warning' | 'error';
 
@@ -48,7 +48,9 @@ function dkimSeverity(d: OnboardingStatus['dkim'], dmarcPolicy: string | null): 
 }
 
 function routingSeverity(r: OnboardingStatus['routing']): Severity {
-  return r.mx_found ? 'good' : 'error';
+  if (r.mx_found && r.destination_verified) return 'good';
+  if (r.mx_found || r.destination_verified) return 'warning';
+  return 'error';
 }
 
 function Badge({ sev }: { sev: Severity }) {
@@ -89,17 +91,25 @@ function CodeBlock({ value, onCopy, copied }: { value: string; onCopy: () => voi
   );
 }
 
-function StepProgress({ current, total }: { current: number; total: number }) {
+function StepProgress({ current, total, wizardState }: { current: number; total: number; wizardState: WizardState }) {
+  const stepKeys: (keyof WizardState)[] = ['spf', 'dkim', 'dmarc', 'routing'];
   return (
     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-      {Array.from({ length: total }, (_, i) => (
-        <div key={i} style={{
-          width: i === current ? '1.5rem' : '0.5rem',
-          height: '0.5rem', borderRadius: '999px',
-          background: i < current ? '#16a34a' : i === current ? '#111827' : '#d1d5db',
-          transition: 'all 0.2s',
-        }} />
-      ))}
+      {Array.from({ length: total }, (_, i) => {
+        const state = wizardState[stepKeys[i]];
+        const bg = state === 'complete' ? '#16a34a'
+          : state === 'skipped' ? '#d97706'
+          : i === current ? '#111827'
+          : '#d1d5db';
+        return (
+          <div key={i} style={{
+            width: i === current ? '1.5rem' : '0.5rem',
+            height: '0.5rem', borderRadius: '999px',
+            background: bg,
+            transition: 'all 0.2s',
+          }} />
+        );
+      })}
       <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: '#9ca3af' }}>
         {current + 1} / {total}
       </span>
@@ -107,9 +117,167 @@ function StepProgress({ current, total }: { current: number; total: number }) {
   );
 }
 
+// ── Step nav with skip ───────────────────────────────────────────────────────
+
+interface StepNavProps {
+  onNext: () => void;
+  onSkip: () => void;
+  nextLabel?: string;
+  showSkip?: boolean;
+}
+
+function StepNav({ onNext, onSkip, nextLabel = 'Continue →', showSkip = true }: StepNavProps) {
+  return (
+    <div style={{ ...s.nav, justifyContent: 'space-between' }}>
+      {showSkip ? (
+        <button onClick={onSkip} style={s.skipStepBtn}>Skip for now</button>
+      ) : <span />}
+      <button onClick={onNext} style={s.nextBtn}>{nextLabel}</button>
+    </div>
+  );
+}
+
 // ── Step components ───────────────────────────────────────────────────────────
 
-function DmarcStep({ status, onNext }: { status: OnboardingStatus; onNext: () => void }) {
+function SpfStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext: () => void; onSkip: () => void }) {
+  const { spf } = status;
+  const sev = spfSeverity(spf);
+  const [copied, setCopied] = useState(false);
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const count = spf.lookup_count ?? 0;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <Badge sev={sev} />
+        <h2 style={s.stepTitle}>SPF record</h2>
+      </div>
+
+      {spf.record ? (
+        <div style={{ marginBottom: '0.75rem' }}>
+          <p style={s.label}>Current record</p>
+          <CodeBlock value={spf.record} onCopy={() => copy(spf.record!)} copied={copied} />
+          {spf.lookup_count !== null && (
+            <p style={{ ...s.body, marginTop: '0.4rem' }}>
+              DNS lookup depth: <strong style={{ color: SEV_COLOR[sev] }}>{count} / 10</strong>
+              {count > 9 && ' — over the limit, receiving servers may reject your mail'}
+              {count >= 8 && count <= 9 && ' — getting close to the limit'}
+              {count < 8 && ' — healthy'}
+            </p>
+          )}
+          {count > 9 && (
+            <p style={{ ...s.body, color: '#d97706', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+              You're over the 10-lookup RFC limit. Check the domain detail page after setup for flattening options.
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          <p style={s.body}>No SPF record found. Without SPF, any server can claim to send email as you.</p>
+          <p style={s.body}>
+            Create one with your email provider's instructions, then return here. A basic example:
+            <br />
+            <code style={s.inline}>v=spf1 include:_spf.google.com ~all</code>
+          </p>
+        </>
+      )}
+
+      {sev === 'good' && (
+        <p style={s.body}>
+          Your SPF record is healthy. InboxAngel monitors it daily and will alert you if lookup depth increases.
+        </p>
+      )}
+
+      <StepNav onNext={onNext} onSkip={onSkip} showSkip={sev !== 'good'} />
+    </div>
+  );
+}
+
+function DkimStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext: () => void; onSkip: () => void }) {
+  const { dkim } = status;
+  const dmarcPolicy = status.dmarc.current_record?.match(/p=([a-z]+)/)?.[1] ?? null;
+  const sev = dkimSeverity(dkim, dmarcPolicy);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanStatus, setRescanStatus] = useState<OnboardingStatus | null>(null);
+
+  const currentDkim = rescanStatus?.dkim ?? dkim;
+  const currentSev = rescanStatus ? dkimSeverity(rescanStatus.dkim, dmarcPolicy) : sev;
+
+  const rescan = async () => {
+    setRescanning(true);
+    try {
+      const updated = await getOnboardingStatus(status.domain_id);
+      setRescanStatus(updated);
+    } catch {} finally {
+      setRescanning(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <Badge sev={currentSev} />
+        <h2 style={s.stepTitle}>DKIM signing</h2>
+      </div>
+
+      {currentDkim.selectors.length > 0 ? (
+        <>
+          <p style={s.body}>
+            Found {currentDkim.selectors.length} DKIM selector{currentDkim.selectors.length > 1 ? 's' : ''}.
+            Your email provider has configured signing — outgoing mail carries a cryptographic signature.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+            {currentDkim.selectors.map(sel => (
+              <div key={sel.name} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.4rem 0.75rem' }}>
+                <code style={{ fontSize: '0.78rem', color: '#15803d', fontFamily: 'monospace' }}>{sel.name}</code>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={s.body}>
+            No DKIM selectors found{currentDkim.source === 'doh' ? ' (checked common selectors)' : ''}.
+          </p>
+          {currentSev === 'warning' ? (
+            <p style={s.body}>
+              Your DMARC policy is <code style={s.inline}>p={dmarcPolicy}</code> but emails lack DKIM signatures.
+              Without DKIM, some messages may fail DMARC alignment and get quarantined or rejected.
+              Set up DKIM signing with your email provider before tightening your policy further.
+            </p>
+          ) : (
+            <p style={s.body}>
+              DKIM isn't required right now since DMARC is in monitoring mode, but you'll need it before
+              moving to <code style={s.inline}>p=quarantine</code> or <code style={s.inline}>p=reject</code>.
+              Set it up through your email provider (Google Workspace, Microsoft 365, etc.).
+            </p>
+          )}
+        </>
+      )}
+
+      <p style={{ ...s.body, color: '#9ca3af', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+        DKIM keys are generated inside your email provider's dashboard, not in DNS directly.
+        Once configured there, click "Rescan DNS" to verify.
+      </p>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+        <button onClick={rescan} disabled={rescanning} style={{ ...s.secondaryBtn, opacity: rescanning ? 0.6 : 1 }}>
+          {rescanning ? 'Scanning…' : 'Rescan DNS'}
+        </button>
+      </div>
+
+      <StepNav onNext={onNext} onSkip={onSkip} showSkip={currentDkim.selectors.length === 0} />
+    </div>
+  );
+}
+
+function DmarcStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext: () => void; onSkip: () => void }) {
   const { dmarc, cf_available } = status;
   const sev = dmarcSeverity(dmarc);
   const [copied, setCopied] = useState(false);
@@ -195,240 +363,137 @@ function DmarcStep({ status, onNext }: { status: OnboardingStatus; onNext: () =>
         </div>
       )}
 
-      <div style={s.nav}>
-        <button onClick={onNext} style={s.nextBtn}>Continue →</button>
-      </div>
+      <StepNav
+        onNext={onNext}
+        onSkip={onSkip}
+        showSkip={sev !== 'info' && !applied}
+      />
     </div>
   );
 }
 
-function SpfStep({ status, onNext }: { status: OnboardingStatus; onNext: () => void }) {
-  const { spf } = status;
-  const sev = spfSeverity(spf);
-  const [copied, setCopied] = useState(false);
-  const [enabling, setEnabling] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-  const [enableError, setEnableError] = useState<string | null>(null);
+function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onDone: () => void; onSkip: () => void }) {
+  const { routing } = status;
+  const sev = routingSeverity(routing);
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckResult, setRecheckResult] = useState<OnboardingStatus['routing'] | null>(null);
 
-  const copy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const current = recheckResult ?? routing;
+  const currentSev = recheckResult ? routingSeverity(recheckResult) : sev;
 
-  const doEnableFlattening = async () => {
-    setEnabling(true);
-    setEnableError(null);
+  const recheck = async () => {
+    setRechecking(true);
     try {
-      await enableSpfFlatten(status.domain_id);
-      setEnabled(true);
-    } catch (e: any) {
-      setEnableError(e.message ?? 'Failed to enable');
-    } finally {
-      setEnabling(false);
+      const updated = await getOnboardingStatus(status.domain_id);
+      setRecheckResult(updated.routing);
+    } catch {} finally {
+      setRechecking(false);
     }
   };
 
-  const count = spf.lookup_count ?? 0;
-  const needsAction = sev !== 'good' && spf.record;
-
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-        <Badge sev={enabled ? 'good' : sev} />
-        <h2 style={s.stepTitle}>SPF record</h2>
-      </div>
-
-      {spf.record ? (
-        <div style={{ marginBottom: '0.75rem' }}>
-          <p style={s.label}>Current record</p>
-          <CodeBlock value={spf.record} onCopy={() => copy(spf.record!)} copied={copied} />
-          {spf.lookup_count !== null && (
-            <p style={{ ...s.body, marginTop: '0.4rem' }}>
-              DNS lookup depth: <strong style={{ color: SEV_COLOR[sev] }}>{count} / 10</strong>
-              {count > 9 && ' — over the limit, receiving servers may reject your mail'}
-              {count >= 8 && count <= 9 && ' — getting close to the limit'}
-              {count < 8 && ' — healthy'}
-            </p>
-          )}
-        </div>
-      ) : (
-        <p style={s.body}>No SPF record found. Without SPF, any server can claim to send email as you.</p>
-      )}
-
-      {sev === 'error' && (
-        <p style={s.body}>
-          Your SPF record exceeds the 10-lookup limit. Receiving mail servers may reject your email
-          as unauthenticated. SPF flattening resolves all includes to raw IPs and keeps it under the limit automatically.
-        </p>
-      )}
-      {sev === 'warning' && needsAction && (
-        <p style={s.body}>
-          You're close to the 10-lookup limit. Adding another email provider would push you over.
-          Enable SPF flattening now to prevent future delivery issues.
-        </p>
-      )}
-      {sev === 'good' && (
-        <p style={s.body}>
-          Your SPF record is healthy. InboxAngel monitors it daily and will alert you if lookup depth increases.
-        </p>
-      )}
-      {!spf.record && (
-        <p style={s.body}>
-          Create one with your email provider's instructions, then return here. A basic example:
-          <br />
-          <code style={s.inline}>v=spf1 include:_spf.google.com ~all</code>
-        </p>
-      )}
-
-      {needsAction && !enabled && (
-        <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={doEnableFlattening}
-            disabled={enabling}
-            style={{ ...s.actionBtn, background: SEV_COLOR[sev], opacity: enabling ? 0.6 : 1 }}
-          >
-            {enabling ? 'Enabling…' : 'Enable SPF flattening'}
-          </button>
-          {enableError && <p style={s.error}>{enableError}</p>}
-        </div>
-      )}
-      {enabled && <p style={{ color: '#16a34a', fontSize: '0.875rem', marginTop: '0.5rem' }}>✓ SPF flattening enabled</p>}
-
-      <div style={s.nav}>
-        <button onClick={onNext} style={s.nextBtn}>Continue →</button>
-      </div>
-    </div>
-  );
-}
-
-function DkimStep({ status, onNext }: { status: OnboardingStatus; onNext: () => void }) {
-  const { dkim } = status;
-  const dmarcPolicy = status.dmarc.current_record?.match(/p=([a-z]+)/)?.[1] ?? null;
-  const sev = dkimSeverity(dkim, dmarcPolicy);
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-        <Badge sev={sev} />
-        <h2 style={s.stepTitle}>DKIM signing</h2>
-      </div>
-
-      {dkim.selectors.length > 0 ? (
-        <>
-          <p style={s.body}>
-            Found {dkim.selectors.length} DKIM selector{dkim.selectors.length > 1 ? 's' : ''}.
-            Your email provider has configured signing — outgoing mail carries a cryptographic signature.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
-            {dkim.selectors.map(sel => (
-              <div key={sel.name} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.4rem 0.75rem' }}>
-                <code style={{ fontSize: '0.78rem', color: '#15803d', fontFamily: 'monospace' }}>{sel.name}</code>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={s.body}>
-            No DKIM selectors found{dkim.source === 'doh' ? ' (checked common selectors)' : ''}.
-          </p>
-          {sev === 'warning' ? (
-            <p style={s.body}>
-              Your DMARC policy is <code style={s.inline}>p={dmarcPolicy}</code> but emails lack DKIM signatures.
-              Without DKIM, some messages may fail DMARC alignment and get quarantined or rejected.
-              Set up DKIM signing with your email provider before tightening your policy further.
-            </p>
-          ) : (
-            <p style={s.body}>
-              DKIM isn't required right now since DMARC is in monitoring mode, but you'll need it before
-              moving to <code style={s.inline}>p=quarantine</code> or <code style={s.inline}>p=reject</code>.
-              Set it up through your email provider (Google Workspace, Microsoft 365, etc.).
-            </p>
-          )}
-        </>
-      )}
-
-      <p style={{ ...s.body, color: '#9ca3af', fontSize: '0.8rem', marginTop: '0.75rem' }}>
-        InboxAngel can't manage DKIM records — they're generated by your email provider. Once configured,
-        they'll appear here automatically.
-      </p>
-
-      <div style={s.nav}>
-        <button onClick={onNext} style={s.nextBtn}>Continue →</button>
-      </div>
-    </div>
-  );
-}
-
-function RoutingStep({ status, onDone }: { status: OnboardingStatus; onDone: () => void }) {
-  const { routing } = status;
-  const sev = routingSeverity(routing);
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-        <Badge sev={sev} />
+        <Badge sev={currentSev} />
         <h2 style={s.stepTitle}>Reports routing</h2>
       </div>
 
-      {sev === 'good' ? (
-        <>
+      {/* MX records */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <p style={s.label}>MX records</p>
+        {current.mx_found ? (
           <p style={s.body}>
-            Email routing is configured for <code style={s.inline}>{routing.reports_domain}</code>.
-            DMARC aggregate reports sent to <code style={s.inline}>rua@{routing.reports_domain}</code> will
-            reach InboxAngel automatically.
+            MX records found for <code style={s.inline}>{current.reports_domain}</code> — reports can reach InboxAngel.
           </p>
+        ) : (
           <p style={s.body}>
-            Reports arrive within 24 hours of your first mail flows. The dashboard will start showing
-            pass/fail data as soon as the first batch lands.
-          </p>
-        </>
-      ) : (
-        <>
-          <p style={s.body}>
-            No MX records found for <code style={s.inline}>{routing.reports_domain ?? 'your reports domain'}</code>.
-            Without them, DMARC reports can't reach InboxAngel.
-          </p>
-          <p style={s.body}>
-            This is usually set up automatically on first domain add. If it didn't work, check that
+            No MX records found for <code style={s.inline}>{current.reports_domain ?? 'your reports domain'}</code>.
+            This is usually set up automatically. If it didn't work, check that
             your <code style={s.inline}>CLOUDFLARE_API_TOKEN</code> has <strong>Email Routing Rules: Edit</strong> and
-            {' '}<strong>DNS: Edit</strong> permissions, then remove and re-add your domain to trigger setup again.
+            {' '}<strong>DNS: Edit</strong> permissions.
           </p>
-        </>
+        )}
+      </div>
+
+      {/* Destination verification */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <p style={s.label}>Email destination</p>
+        {current.destination_verified ? (
+          <p style={s.body}>
+            Your email address is verified as a Cloudflare Email Routing destination. Reports will be forwarded to you.
+          </p>
+        ) : (
+          <p style={s.body}>
+            Your email address hasn't been verified yet. Check your inbox for a verification email from Cloudflare
+            and click the link, then press "Re-check" below.
+          </p>
+        )}
+      </div>
+
+      {currentSev === 'good' ? (
+        <p style={s.body}>
+          Everything is connected. Reports arrive within 24 hours of your first mail flows.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+          <button onClick={recheck} disabled={rechecking} style={{ ...s.secondaryBtn, opacity: rechecking ? 0.6 : 1 }}>
+            {rechecking ? 'Checking…' : 'Re-check'}
+          </button>
+        </div>
       )}
 
-      <div style={{ ...s.nav, marginTop: '1.5rem' }}>
-        <button onClick={onDone} style={{ ...s.nextBtn, background: '#16a34a' }}>
-          Go to dashboard →
-        </button>
-      </div>
+      <StepNav
+        onNext={onDone}
+        onSkip={onSkip}
+        nextLabel="Go to dashboard →"
+        showSkip={currentSev !== 'good'}
+      />
     </div>
   );
 }
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
-const STEPS = ['DMARC', 'SPF', 'DKIM', 'Routing'];
+const STEPS = ['SPF', 'DKIM', 'DMARC', 'Routing'];
+const STEP_KEYS: (keyof WizardState)[] = ['spf', 'dkim', 'dmarc', 'routing'];
+const DEFAULT_WIZARD: WizardState = { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
 
 export function Onboarding() {
   const [step, setStep] = useState(0);
   const [domainId, setDomainId] = useState<number | null>(null);
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [wizardState, setWizardState] = useState<WizardState>(DEFAULT_WIZARD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getDomains()
-      .then(({ domains }) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { domains } = await getDomains();
         if (domains.length === 0) { done(); return; }
         const id = domains[0].id;
         setDomainId(id);
-        return getOnboardingStatus(id);
-      })
-      .then(s => { if (s) setStatus(s); })
-      .catch(e => setError(e.message ?? 'Failed to load'))
-      .finally(() => setLoading(false));
+
+        const [statusData, wizardData] = await Promise.all([
+          getOnboardingStatus(id),
+          getWizardState(id).catch(() => DEFAULT_WIZARD),
+        ]);
+
+        if (cancelled) return;
+        setStatus(statusData);
+        setWizardState(wizardData);
+
+        // Jump to first incomplete step on resume
+        const firstIncomplete = STEP_KEYS.findIndex(k => wizardData[k] === 'not_started');
+        if (firstIncomplete > 0) setStep(firstIncomplete);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message ?? 'Failed to load');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const done = () => {
@@ -436,10 +501,27 @@ export function Onboarding() {
     window.location.hash = domainId ? `#/domains/${domainId}` : '#/';
   };
 
-  const next = () => {
-    if (step < STEPS.length - 1) setStep(s => s + 1);
-    else done();
+  const markAndAdvance = async (state: WizardStepState) => {
+    const key = STEP_KEYS[step];
+    const updates = { [key]: state } as Partial<WizardState>;
+    const updated = { ...wizardState, [key]: state };
+    setWizardState(updated);
+
+    if (domainId) {
+      updateWizardState(domainId, updates).catch(() => {});
+    }
+
+    if (step < STEPS.length - 1) {
+      setStep(s => s + 1);
+    } else {
+      done();
+    }
   };
+
+  const handleNext = () => markAndAdvance('complete');
+  const handleSkip = () => markAndAdvance('skipped');
+
+  const completedCount = STEP_KEYS.filter(k => wizardState[k] === 'complete').length;
 
   if (loading) return (
     <div style={s.wrap}>
@@ -460,19 +542,22 @@ export function Onboarding() {
     <div style={s.wrap}>
       <div style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <div style={s.logo}>🪄 InboxAngel</div>
+          <div style={s.logo}>InboxAngel</div>
           <button onClick={done} style={s.skipLink}>Skip setup →</button>
         </div>
-        <p style={{ ...s.body, margin: '0 0 1.25rem', color: '#6b7280' }}>
+        <p style={{ ...s.body, margin: '0 0 0.25rem', color: '#6b7280' }}>
           Let's verify your email security for <strong>{status.domain}</strong>
         </p>
+        <p style={{ margin: '0 0 1.25rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+          {completedCount} of {STEPS.length} steps complete
+        </p>
 
-        <StepProgress current={step} total={STEPS.length} />
+        <StepProgress current={step} total={STEPS.length} wizardState={wizardState} />
 
-        {step === 0 && <DmarcStep status={status} onNext={next} />}
-        {step === 1 && <SpfStep status={status} onNext={next} />}
-        {step === 2 && <DkimStep status={status} onNext={next} />}
-        {step === 3 && <RoutingStep status={status} onDone={done} />}
+        {step === 0 && <SpfStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 1 && <DkimStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 2 && <DmarcStep status={status} onNext={handleNext} onSkip={handleSkip} />}
+        {step === 3 && <RoutingStep status={status} onDone={handleNext} onSkip={handleSkip} />}
       </div>
     </div>
   );
@@ -498,7 +583,7 @@ const s = {
     fontFamily: 'monospace', fontSize: '0.85em',
     background: '#f3f4f6', padding: '0.1em 0.3em', borderRadius: '3px',
   } as const,
-  nav: { marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' } as const,
+  nav: { marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' } as const,
   nextBtn: {
     padding: '0.6rem 1.25rem', background: '#111827', color: '#fff',
     border: 'none', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
@@ -513,6 +598,10 @@ const s = {
   } as const,
   skipLink: {
     background: 'none', border: 'none', padding: 0,
+    fontSize: '0.8rem', color: '#9ca3af', cursor: 'pointer', textDecoration: 'underline',
+  } as const,
+  skipStepBtn: {
+    background: 'none', border: 'none', padding: '0.6rem 0',
     fontSize: '0.8rem', color: '#9ca3af', cursor: 'pointer', textDecoration: 'underline',
   } as const,
   error: { color: '#dc2626', fontSize: '0.8rem', margin: '0.4rem 0 0' } as const,

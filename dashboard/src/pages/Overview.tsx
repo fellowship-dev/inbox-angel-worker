@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats } from '../api';
-import type { Domain, DomainStats } from '../types';
+import { getDomains, getDomainStats, getWizardState } from '../api';
+import type { Domain, DomainStats, WizardState } from '../types';
 import { useIsMobile } from '../hooks';
 
 type Status = 'good' | 'warning' | 'danger';
@@ -11,6 +11,8 @@ interface DomainRow {
   total: number;
   failed: number;
   status: Status;
+  wizardComplete: number;
+  wizardTotal: number;
 }
 
 function computeStatus(policy: Domain['dmarc_policy'], passRate: number | null): Status {
@@ -78,9 +80,10 @@ export function Overview({ onUnauthorized }: Props) {
         const { domains } = await getDomains();
         if (domains.length === 1) { window.location.hash = `#/domains/${domains[0].id}`; return; }
 
-        const statsResults = await Promise.allSettled(
-          domains.map((d) => getDomainStats(d.id, 7))
-        );
+        const [statsResults, wizardResults] = await Promise.all([
+          Promise.allSettled(domains.map((d) => getDomainStats(d.id, 7))),
+          Promise.allSettled(domains.map((d) => getWizardState(d.id))),
+        ]);
 
         if (cancelled) return;
 
@@ -97,7 +100,14 @@ export function Overview({ onUnauthorized }: Props) {
             passRate = total > 0 ? passed / total : null;
           }
 
-          return { domain, passRate, total, failed, status: computeStatus(domain.dmarc_policy, passRate) };
+          let wizardComplete = 0;
+          const wizardTotal = 4;
+          if (wizardResults[i].status === 'fulfilled') {
+            const ws = wizardResults[i].value as WizardState;
+            wizardComplete = Object.values(ws).filter(v => v === 'complete').length;
+          }
+
+          return { domain, passRate, total, failed, status: computeStatus(domain.dmarc_policy, passRate), wizardComplete, wizardTotal };
         });
 
         setRows(built);
@@ -141,8 +151,9 @@ export function Overview({ onUnauthorized }: Props) {
         </div>
       )}
 
-      {rows.map(({ domain, passRate, total, failed }) => {
+      {rows.map(({ domain, passRate, total, failed, wizardComplete, wizardTotal }) => {
         const score = passRate !== null ? Math.round(passRate * 100) : null;
+        const setupIncomplete = wizardComplete < wizardTotal;
         return (
           <div
             key={domain.id}
@@ -152,9 +163,20 @@ export function Overview({ onUnauthorized }: Props) {
             onMouseLeave={() => setHovered(null)}
           >
             <ScoreCircle score={score} />
-            <span style={{ flex: 1, fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {domain.domain}
-            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                {domain.domain}
+              </span>
+              {setupIncomplete && (
+                <a
+                  href={`#/onboarding`}
+                  onClick={(e: Event) => e.stopPropagation()}
+                  style={{ fontSize: '0.7rem', color: '#d97706', textDecoration: 'none' }}
+                >
+                  {wizardComplete}/{wizardTotal} setup steps — Continue setup →
+                </a>
+              )}
+            </div>
             <span style={styles.badge}>
               {domain.dmarc_policy ? POLICY_LABEL[domain.dmarc_policy] : '—'}
             </span>
