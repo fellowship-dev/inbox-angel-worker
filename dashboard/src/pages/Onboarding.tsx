@@ -581,8 +581,10 @@ const DEFAULT_WIZARD: WizardState = { domain: 'not_started', spf: 'not_started',
 
 export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?: number; initialStep?: number } = {}) {
   // Steps are 1-indexed in the URL, 0-indexed internally
+  // If domain already exists (domainIdProp set), clamp minimum to step 1 (SPF) — skip domain input
   const initialInternal = initialStep !== undefined ? initialStep - 1 : undefined;
-  const [step, setStepRaw] = useState(initialInternal ?? 0);
+  const clampedInitial = (initialInternal !== undefined && initialInternal < 1 && domainIdProp) ? 1 : initialInternal;
+  const [step, setStepRaw] = useState(clampedInitial ?? 0);
   const [domainId, setDomainId] = useState<number | null>(domainIdProp ?? null);
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [wizardState, setWizardState] = useState<WizardState>(DEFAULT_WIZARD);
@@ -622,27 +624,32 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
         }
         setDomainId(id);
 
-        const [statusData, wizardData] = await Promise.all([
+        const [statusData, rawWizardData] = await Promise.all([
           getOnboardingStatus(id),
           getWizardState(id).catch(() => DEFAULT_WIZARD),
         ]);
 
         if (cancelled) return;
         setStatus(statusData);
+
+        // Domain exists — ensure domain step is marked complete
+        let wizardData = rawWizardData;
+        if (wizardData.domain !== 'complete') {
+          wizardData = { ...wizardData, domain: 'complete' };
+          updateWizardState(id, { domain: 'complete' }).catch(() => {});
+        }
         setWizardState(wizardData);
 
         // Jump to first incomplete step on resume (unless URL specified a step)
-        // Skip step 0 (domain) if domain is already set
-        if (initialStep === undefined) {
+        // Skip step 0 (domain) — always start at SPF or later
+        if (initialStep === undefined || (initialInternal !== undefined && initialInternal < 1)) {
           const firstIncomplete = STEP_KEYS.findIndex((k, i) => {
-            if (i === 0) return false; // domain step is done if we got here
+            if (i === 0) return false; // domain step handled above
             return wizardData[k] === 'not_started';
           });
-          const target = firstIncomplete > 0 ? firstIncomplete : 1; // skip domain step
-          if (target > 0) {
-            setStepRaw(target);
-            window.location.hash = `#/domains/${id}/setup/${target + 1}`;
-          }
+          const target = firstIncomplete > 0 ? firstIncomplete : 1;
+          setStepRaw(target);
+          window.location.hash = `#/domains/${id}/setup/${target + 1}`;
         }
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? 'Failed to load');
@@ -756,7 +763,7 @@ export function Onboarding({ domainId: domainIdProp, initialStep }: { domainId?:
 
         <StepProgress current={step} total={STEPS.length} wizardState={wizardState} />
 
-        {step === 0 && <DomainStep onDomainSet={handleDomainSet} />}
+        {step === 0 && needsDomain && <DomainStep onDomainSet={handleDomainSet} />}
         {step === 1 && <SpfStep status={status} onNext={handleNext} onSkip={handleSkip} />}
         {step === 2 && <DkimStep status={status} onNext={handleNext} onSkip={handleSkip} />}
         {step === 3 && <DmarcStep status={status} onNext={handleNext} onSkip={handleSkip} />}

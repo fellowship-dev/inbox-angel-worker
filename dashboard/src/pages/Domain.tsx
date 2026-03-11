@@ -198,8 +198,12 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
       {wizardState && Object.values(wizardState).some(v => v !== 'complete') && (() => {
         const done = Object.values(wizardState).filter(v => v === 'complete').length;
         const total_ = Object.values(wizardState).length;
+        // Link to first incomplete step (skip domain step — always at least 2)
+        const stepKeys = ['domain', 'spf', 'dkim', 'dmarc', 'routing'] as const;
+        const firstIncomplete = stepKeys.findIndex((k, i) => i > 0 && wizardState[k] !== 'complete');
+        const targetStep = firstIncomplete > 0 ? firstIncomplete + 1 : 2; // 1-indexed, minimum SPF
         return (
-          <a href={`#/domains/${id}/setup/1`} style={{
+          <a href={`#/domains/${id}/setup/${targetStep}`} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: '0.75rem', flexWrap: 'wrap',
             background: '#fffbeb', border: '1px solid #fde68a',

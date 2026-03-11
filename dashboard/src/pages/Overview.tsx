@@ -78,7 +78,6 @@ export function Overview({ onUnauthorized }: Props) {
     async function load() {
       try {
         const { domains } = await getDomains();
-        if (domains.length === 1) { window.location.hash = `#/domains/${domains[0].id}`; return; }
 
         const [statsResults, wizardResults] = await Promise.all([
           Promise.allSettled(domains.map((d) => getDomainStats(d.id, 7))),

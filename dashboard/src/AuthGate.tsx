@@ -120,8 +120,8 @@ export function AuthGate({ onSave }: Props) {
       const { token, has_domain } = await res.json() as { token: string; has_domain?: boolean };
       localStorage.setItem('ia_api_key', token);
       if (!status?.configured) {
-        // After first-time setup: go to wizard (step 0 if no domain, step 1 if domain exists)
-        window.location.hash = has_domain ? '#/setup' : '#/setup';
+        // After first-time setup: go to dashboard if domain exists, wizard if not
+        window.location.hash = has_domain ? '#/' : '#/setup';
         onSave(token);
       } else {
         onSave(token);
