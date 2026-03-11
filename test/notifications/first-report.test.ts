@@ -6,6 +6,7 @@ import { buildFirstReportBody, sendFirstReportNotification, ReportStats } from '
 vi.mock('../../src/env-utils', () => ({
   reportsDomain: vi.fn(() => 'reports.acme.com'),
   fromEmail: vi.fn(() => 'noreply@reports.acme.com'),
+  getAccountId: vi.fn(() => 'test-account-id'),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────
@@ -21,19 +22,28 @@ const STATS: ReportStats = {
 
 function makeEnv(overrides: { admin?: typeof ADMIN | null; sendEmail?: boolean; customDomain?: string | null } = {}) {
   const admin = overrides.admin === undefined ? ADMIN : overrides.admin;
-  const customDomain = overrides.customDomain !== undefined
+  const customDomainValue = overrides.customDomain !== undefined
     ? (overrides.customDomain ? { value: overrides.customDomain } : null)
     : { value: 'inbox.acme.com' };
+  const settingsMap: Record<string, { value: string } | null> = {
+    custom_domain: customDomainValue,
+    workers_subdomain: null, // not cached — triggers API fallback
+  };
   return {
     DB: {
-      prepare: vi.fn((sql: string) => ({
-        bind: vi.fn().mockReturnThis(),
-        first: vi.fn().mockImplementation(() => {
-          if (sql.includes('settings')) return Promise.resolve(customDomain);
-          if (sql.includes('users')) return Promise.resolve(admin);
-          return Promise.resolve(null);
-        }),
-      })),
+      prepare: vi.fn((sql: string) => {
+        let boundKey: string | undefined;
+        const self = {
+          bind: vi.fn((...args: any[]) => { boundKey = args[0]; return self; }),
+          run: vi.fn().mockResolvedValue({ success: true }),
+          first: vi.fn().mockImplementation(() => {
+            if (sql.includes('settings') && boundKey) return Promise.resolve(settingsMap[boundKey] ?? null);
+            if (sql.includes('users')) return Promise.resolve(admin);
+            return Promise.resolve(null);
+          }),
+        };
+        return self;
+      }),
     } as unknown as D1Database,
     ...(overrides.sendEmail !== false
       ? { SEND_EMAIL: { send: vi.fn().mockResolvedValue(undefined) } as any }
@@ -197,22 +207,21 @@ describe('storeReport first-report trigger', () => {
 
   function makeMockDb(opts: { lastRowId?: number; reportCount?: number } = {}) {
     const { lastRowId = 42, reportCount = 1 } = opts;
-    const firstFn = (sql: string) => vi.fn().mockImplementation(() => {
-      if (sql.includes('COUNT(*)')) return Promise.resolve({ cnt: reportCount });
-      if (sql.includes('SELECT domain')) return Promise.resolve({ domain: 'acme.com' });
-      if (sql.includes('users')) return Promise.resolve({ email: 'admin@acme.com', name: 'Admin' });
-      return Promise.resolve(null);
-    });
     return {
       prepare: vi.fn((sql: string) => {
-        const first = firstFn(sql);
-        return {
-          bind: vi.fn(() => ({
-            run: vi.fn().mockResolvedValue({ meta: { last_row_id: lastRowId } }),
-            first,
-          })),
-          first, // also available without .bind() (used by sendFirstReportNotification)
+        let boundKey: string | undefined;
+        const self = {
+          bind: vi.fn((...args: any[]) => { boundKey = args[0]; return self; }),
+          run: vi.fn().mockResolvedValue({ meta: { last_row_id: lastRowId }, success: true }),
+          first: vi.fn().mockImplementation(() => {
+            if (sql.includes('COUNT(*)')) return Promise.resolve({ cnt: reportCount });
+            if (sql.includes('SELECT domain')) return Promise.resolve({ domain: 'acme.com' });
+            if (sql.includes('users')) return Promise.resolve({ email: 'admin@acme.com', name: 'Admin' });
+            if (sql.includes('settings')) return Promise.resolve(null); // no custom_domain or cached subdomain
+            return Promise.resolve(null);
+          }),
         };
+        return self;
       }),
       batch: vi.fn((stmts: any[]) => Promise.resolve(stmts.map(() => ({ success: true, meta: {} })))),
     } as unknown as D1Database;

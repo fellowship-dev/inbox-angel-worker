@@ -65,7 +65,7 @@ export async function handleDmarcReport(
 
   // 4. Store in D1 (dedup handled by INSERT OR IGNORE inside storeReport)
   try {
-    const result = await storeReport(env.DB, domain.id, report, rawXml, { DB: env.DB, SEND_EMAIL: env.SEND_EMAIL, WORKER_NAME: env.WORKER_NAME });
+    const result = await storeReport(env.DB, domain.id, report, rawXml, { DB: env.DB, SEND_EMAIL: env.SEND_EMAIL, WORKER_NAME: env.WORKER_NAME, CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN });
     if (result.stored) {
       console.log(
         `dmarc-report: stored report ${report.report_metadata.report_id} ` +
