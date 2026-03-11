@@ -3,14 +3,13 @@
 // Delivery: Cloudflare Email Workers (SEND_EMAIL binding).
 // Falls back to console.log if binding is absent.
 
-import { fromEmail, getAccountId } from '../env-utils';
-import { getSetting, setSetting } from '../db/queries';
+import { fromEmail, getWorkersSubdomain } from '../env-utils';
+import { getSetting } from '../db/queries';
 
 export interface FirstReportEnv {
   DB: D1Database;
   SEND_EMAIL?: SendEmail;
   WORKER_NAME?: string;
-  CLOUDFLARE_API_TOKEN?: string;
 }
 
 export interface ReportStats {
@@ -54,35 +53,6 @@ export function buildFirstReportBody(
   return lines.join('\n');
 }
 
-// ── Workers subdomain resolution ─────────────────────────────
-
-async function resolveWorkersSubdomain(env: FirstReportEnv): Promise<string | null> {
-  // 1. Check D1 cache
-  const cached = await getSetting(env.DB, 'workers_subdomain');
-  if (cached?.value) return cached.value;
-
-  // 2. Query CF API: GET /accounts/{account_id}/workers/subdomain
-  const accountId = getAccountId();
-  if (!accountId || !env.CLOUDFLARE_API_TOKEN) return null;
-
-  try {
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`,
-      { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` } },
-    );
-    if (!res.ok) return null;
-    const data = await res.json() as { result?: { subdomain: string } };
-    const subdomain = data.result?.subdomain ?? null;
-    if (subdomain) {
-      // Cache in D1 for future cold starts
-      await setSetting(env.DB, 'workers_subdomain', subdomain).catch(() => {});
-    }
-    return subdomain;
-  } catch {
-    return null;
-  }
-}
-
 // ── Delivery ──────────────────────────────────────────────────
 
 export async function sendFirstReportNotification(
@@ -97,7 +67,7 @@ export async function sendFirstReportNotification(
     dashboardUrl = `https://${customDomain.value}`;
   } else {
     const workerName = env.WORKER_NAME ?? 'inbox-angel-worker';
-    const subdomain = await resolveWorkersSubdomain(env);
+    const subdomain = getWorkersSubdomain();
     dashboardUrl = subdomain
       ? `https://${workerName}.${subdomain}.workers.dev`
       : `https://${workerName}.workers.dev`;
