@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, enableSpfFlatten, disableSpfFlatten, getMtaStsStatus, enableMtaSts, updateMtaStsMode, refreshMtaStsMx, disableMtaSts } from '../api';
-import type { Domain, DomainStats, FailingSource, SpfFlatStatus, MtaStsStatus } from '../types';
+import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, enableSpfFlatten, disableSpfFlatten, getMtaStsStatus, enableMtaSts, updateMtaStsMode, refreshMtaStsMx, disableMtaSts, getWizardState } from '../api';
+import type { Domain, DomainStats, FailingSource, SpfFlatStatus, MtaStsStatus, WizardState } from '../types';
 import { useIsMobile } from '../hooks';
 
 interface Props {
@@ -112,6 +112,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const [mtaSts, setMtaSts] = useState<MtaStsStatus | null>(null);
   const [mtaStsBusy, setMtaStsBusy] = useState(false);
   const [mtaStsError, setMtaStsError] = useState<string | null>(null);
+  const [wizardState, setWizardState] = useState<WizardState | null>(null);
   const mobile = useIsMobile();
 
   // Initial load: domain info + failing sources (don't depend on chartDays)
@@ -119,17 +120,19 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
     let cancelled = false;
     async function load() {
       try {
-        const [{ domains }, src, flat, mta] = await Promise.all([
+        const [{ domains }, src, flat, mta, ws] = await Promise.all([
           getDomains(),
           getDomainSources(id, 7),
           getSpfFlattenStatus(id).catch(() => null),
           getMtaStsStatus(id).catch(() => null),
+          getWizardState(id).catch(() => null),
         ]);
         if (cancelled) return;
         setDomain(domains.find((d) => d.id === id) ?? null);
         setSources(src.sources);
         if (flat) setSpfFlat(flat);
         if (mta) setMtaSts(mta);
+        if (ws) setWizardState(ws);
       } catch (e: any) {
         if (cancelled) return;
         if (e.message === '401') { onUnauthorized(); return; }
@@ -191,6 +194,23 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         <span style={{ ...s.badge, color: POLICY_COLOR[policy] ?? '#6b7280' }}>{policy}</span>
         <a href={`#/domains/${id}/settings`} style={s.settingsLink}>Settings</a>
       </div>
+
+      {wizardState && Object.values(wizardState).some(v => v !== 'complete') && (() => {
+        const done = Object.values(wizardState).filter(v => v === 'complete').length;
+        const total_ = Object.values(wizardState).length;
+        return (
+          <a href="#/onboarding" style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: '0.75rem', flexWrap: 'wrap',
+            background: '#fffbeb', border: '1px solid #fde68a',
+            borderRadius: '8px', padding: '0.6rem 1rem', marginBottom: '1rem',
+            fontSize: '0.875rem', color: '#92400e', textDecoration: 'none',
+          }}>
+            <span>Setup incomplete — {done}/{total_} steps done</span>
+            <span style={{ fontWeight: 600, flexShrink: 0 }}>Continue setup →</span>
+          </a>
+        );
+      })()}
 
       {/* Summary numbers — 2×2 grid on mobile */}
       <div style={{ ...s.summaryRow, flexWrap: 'wrap', gap: mobile ? '1rem' : '2rem' }}>

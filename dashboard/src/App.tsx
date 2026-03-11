@@ -121,7 +121,11 @@ export function App() {
   if (!hasKey) return <AuthGate onSave={() => setHasKey(true)} />;
 
   // Onboarding wizard — full-screen, no nav shell
-  if (route === '/onboarding') return <Onboarding />;
+  const onboardingMatch = route.match(/^\/onboarding(?:\/(\d+))?$/);
+  if (onboardingMatch) {
+    const stepFromUrl = onboardingMatch[1] !== undefined ? parseInt(onboardingMatch[1], 10) : undefined;
+    return <Onboarding initialStep={stepFromUrl} />;
+  }
 
   return (
     <div style={{ ...styles.shell, padding: mobile ? '0 1rem' : '0 1.5rem' }}>

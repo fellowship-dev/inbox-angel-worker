@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getDomains, getOnboardingStatus, applyDmarc, getWizardState, updateWizardState } from '../api';
+import { getDomains, getOnboardingStatus, applyDmarc, getWizardState, updateWizardState, setupEmailRouting } from '../api';
 import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
 
 type Severity = 'good' | 'info' | 'warning' | 'error';
@@ -377,6 +377,8 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
   const sev = routingSeverity(routing);
   const [rechecking, setRechecking] = useState(false);
   const [recheckResult, setRecheckResult] = useState<OnboardingStatus['routing'] | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   const current = recheckResult ?? routing;
   const currentSev = recheckResult ? routingSeverity(recheckResult) : sev;
@@ -388,6 +390,19 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
       setRecheckResult(updated.routing);
     } catch {} finally {
       setRechecking(false);
+    }
+  };
+
+  const setup = async () => {
+    setSettingUp(true);
+    setSetupError(null);
+    try {
+      await setupEmailRouting();
+      await recheck();
+    } catch (e: any) {
+      setSetupError(e.message ?? 'Failed to set up email routing');
+    } finally {
+      setSettingUp(false);
     }
   };
 
@@ -406,12 +421,20 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
             MX records found for <code style={s.inline}>{current.reports_domain}</code> — reports can reach InboxAngel.
           </p>
         ) : (
-          <p style={s.body}>
-            No MX records found for <code style={s.inline}>{current.reports_domain ?? 'your reports domain'}</code>.
-            This is usually set up automatically. If it didn't work, check that
-            your <code style={s.inline}>CLOUDFLARE_API_TOKEN</code> has <strong>Email Routing Rules: Edit</strong> and
-            {' '}<strong>DNS: Edit</strong> permissions.
-          </p>
+          <>
+            <p style={s.body}>
+              No MX records found for <code style={s.inline}>{current.reports_domain ?? 'your reports domain'}</code>.
+              Email routing needs to be configured so DMARC reports can reach InboxAngel.
+            </p>
+            <button
+              onClick={setup}
+              disabled={settingUp}
+              style={{ ...s.actionBtn, background: '#d97706', opacity: settingUp ? 0.6 : 1 }}
+            >
+              {settingUp ? 'Setting up…' : 'Set up email routing'}
+            </button>
+            {setupError && <p style={s.error}>{setupError}</p>}
+          </>
         )}
       </div>
 
@@ -420,12 +443,12 @@ function RoutingStep({ status, onDone, onSkip }: { status: OnboardingStatus; onD
         <p style={s.label}>Email destination</p>
         {current.destination_verified ? (
           <p style={s.body}>
-            Your email address is verified as a Cloudflare Email Routing destination. Reports will be forwarded to you.
+            <code style={s.inline}>{current.admin_email}</code> is verified as a Cloudflare Email Routing destination. Reports will be forwarded to you.
           </p>
         ) : (
           <p style={s.body}>
-            Your email address hasn't been verified yet. Check your inbox for a verification email from Cloudflare
-            and click the link, then press "Re-check" below.
+            <code style={s.inline}>{current.admin_email ?? 'Your email'}</code> hasn't been verified as a Cloudflare Email Routing destination yet.
+            Check your inbox for a verification email from Cloudflare and click the link, then press "Re-check" below.
           </p>
         )}
       </div>
@@ -458,13 +481,21 @@ const STEPS = ['SPF', 'DKIM', 'DMARC', 'Routing'];
 const STEP_KEYS: (keyof WizardState)[] = ['spf', 'dkim', 'dmarc', 'routing'];
 const DEFAULT_WIZARD: WizardState = { spf: 'not_started', dkim: 'not_started', dmarc: 'not_started', routing: 'not_started' };
 
-export function Onboarding() {
-  const [step, setStep] = useState(0);
+export function Onboarding({ initialStep }: { initialStep?: number } = {}) {
+  const [step, setStepRaw] = useState(initialStep ?? 0);
   const [domainId, setDomainId] = useState<number | null>(null);
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [wizardState, setWizardState] = useState<WizardState>(DEFAULT_WIZARD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const setStep = (s: number | ((prev: number) => number)) => {
+    setStepRaw(prev => {
+      const next = typeof s === 'function' ? s(prev) : s;
+      window.location.hash = `#/onboarding/${next}`;
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -484,9 +515,14 @@ export function Onboarding() {
         setStatus(statusData);
         setWizardState(wizardData);
 
-        // Jump to first incomplete step on resume
-        const firstIncomplete = STEP_KEYS.findIndex(k => wizardData[k] === 'not_started');
-        if (firstIncomplete > 0) setStep(firstIncomplete);
+        // Jump to first incomplete step on resume (unless URL specified a step)
+        if (initialStep === undefined) {
+          const firstIncomplete = STEP_KEYS.findIndex(k => wizardData[k] === 'not_started');
+          if (firstIncomplete > 0) {
+            setStepRaw(firstIncomplete);
+            window.location.hash = `#/onboarding/${firstIncomplete}`;
+          }
+        }
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? 'Failed to load');
       } finally {

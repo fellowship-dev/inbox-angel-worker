@@ -55,9 +55,16 @@ export async function resolveZoneId(
 
 /**
  * Warm the zone ID cache. Call once at the top of request/cron handlers.
- * Returns env unchanged — zone ID is accessed via getZoneId() after this.
+ * Uses CLOUDFLARE_ZONE_ID / CLOUDFLARE_ACCOUNT_ID env vars if set,
+ * otherwise resolves via API. Zone ID is then accessed via getZoneId().
  */
 export async function enrichEnv(env: Env): Promise<Env> {
-  await resolveZoneId(env);
+  if ((env as Record<string, unknown>).CLOUDFLARE_ZONE_ID && !_zoneIdCache) {
+    _zoneIdCache = (env as Record<string, unknown>).CLOUDFLARE_ZONE_ID as string;
+  }
+  if ((env as Record<string, unknown>).CLOUDFLARE_ACCOUNT_ID && !_accountIdCache) {
+    _accountIdCache = (env as Record<string, unknown>).CLOUDFLARE_ACCOUNT_ID as string;
+  }
+  if (!_zoneIdCache) await resolveZoneId(env);
   return env;
 }

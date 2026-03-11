@@ -1038,10 +1038,12 @@ async function _handleApi(
 
           // Check if the admin's email is verified as a CF Email Routing destination
           let destination_verified = false;
+          let admin_email: string | null = null;
           const accountId = env.CLOUDFLARE_ACCOUNT_ID ?? getAccountId();
           if (env.CLOUDFLARE_API_TOKEN && accountId) {
             try {
               const admin = await env.DB!.prepare(`SELECT email FROM users WHERE role = 'admin' LIMIT 1`).first<{ email: string }>();
+              admin_email = admin?.email ?? null;
               if (admin?.email) {
                 const destRes = await fetch(
                   `https://api.cloudflare.com/client/v4/accounts/${accountId}/email/routing/addresses`,
@@ -1053,7 +1055,7 @@ async function _handleApi(
             } catch {}
           }
 
-          return { ...mxResult, destination_verified };
+          return { ...mxResult, destination_verified, admin_email };
         })(),
 
         // DKIM: CF API if available (full zone scan), else DoH for common selectors
