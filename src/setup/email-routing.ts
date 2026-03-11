@@ -32,6 +32,7 @@ interface EmailRule {
 }
 
 interface DnsRecord {
+  id: string;
   name: string;
   content: string;
   priority: number;
@@ -106,25 +107,35 @@ export async function ensureEmailRouting(env: Env): Promise<EmailRoutingResult> 
     }
   }
 
-  // Step 3: Ensure MX records exist for REPORTS_DOMAIN subdomain (always runs)
+  // Step 3: Ensure MX records for REPORTS_DOMAIN point to CF Email Routing (always runs)
+  // CF Email Routing requires its own MX servers — NOT the user's mail server MX records.
+  const CF_EMAIL_ROUTING_MX = [
+    { content: 'route1.mx.cloudflare.net', priority: 40 },
+    { content: 'route2.mx.cloudflare.net', priority: 83 },
+    { content: 'route3.mx.cloudflare.net', priority: 98 },
+  ];
+
   let mxCreated = false;
   const existingMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', `/dns_records?type=MX&name=${domain}`);
-  if (existingMx.length === 0) {
-    const allMx = await cfFetch<DnsRecord[]>(token, zoneId, 'GET', '/dns_records?type=MX');
-    const apex = domain.split('.').slice(-2).join('.');
-    const apexMx = allMx.filter(r => r.name === apex);
+  const hasCfMx = existingMx.some(r => r.content.endsWith('.mx.cloudflare.net'));
 
-    if (apexMx.length === 0) {
-      throw new Error(`No apex MX records found for ${apex}. Email Routing may still be initialising on your zone — try again in a minute.`);
+  if (!hasCfMx) {
+    // Delete any non-CF MX records on the subdomain (e.g. cloned user mail server records)
+    for (const old of existingMx) {
+      if (!old.content.endsWith('.mx.cloudflare.net')) {
+        try {
+          await cfFetch(token, zoneId, 'DELETE', `/dns_records/${old.id}`);
+        } catch {}
+      }
     }
 
     const subdomain = domain.split('.')[0];
-    for (const mx of apexMx) {
+    for (const mx of CF_EMAIL_ROUTING_MX) {
       await cfFetch(token, zoneId, 'POST', '/dns_records', {
         type: 'MX', name: subdomain, content: mx.content, priority: mx.priority, ttl: 1,
       });
     }
-    console.log(`[setup] MX records added for ${domain}`);
+    console.log(`[setup] CF Email Routing MX records added for ${domain}`);
     mxCreated = true;
   }
 
