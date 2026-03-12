@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getDomains, getOnboardingStatus, applyDmarc, applySpf, getWizardState, updateWizardState, setupEmailRouting, setBaseDomain, registerDestination } from '../api';
-import { SPF_PROVIDERS, detectProviders, extractIncludes, buildSpfRecord } from '../spf-providers';
+import { SPF_PROVIDERS, detectProviders, extractIncludes, extractOtherMechanisms, buildSpfRecord } from '../spf-providers';
 import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
 
 type Severity = 'good' | 'info' | 'warning' | 'error';
@@ -300,6 +300,8 @@ function SpfStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext:
   const detectedProviders = spf.record ? detectProviders(spf.record) : [];
   const detectedIncludeSet = new Set(detectedProviders.map(p => p.include));
   const unknownIncludes = existingIncludes.filter(i => !SPF_PROVIDERS.some(p => p.include === i));
+  // Preserve non-include mechanisms (mx, a, ip4:, ip6:, redirect=, etc.)
+  const otherMechanisms = spf.record ? extractOtherMechanisms(spf.record) : [];
 
   // Checkbox state: provider include domain → checked
   const [selected, setSelected] = useState<Set<string>>(() => new Set(existingIncludes));
@@ -332,12 +334,12 @@ function SpfStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNext:
     });
   };
 
-  // Build preview record from selections
+  // Build preview record from selections (preserving non-include mechanisms like mx)
   const selectedIncludes = Array.from(selected);
-  const previewRecord = selectedIncludes.length > 0
-    ? buildSpfRecord(selectedIncludes, qualifier)
+  const previewRecord = (selectedIncludes.length > 0 || otherMechanisms.length > 0)
+    ? buildSpfRecord(selectedIncludes, qualifier, otherMechanisms)
     : null;
-  const estimatedLookups = selectedIncludes.length; // each include = ~1 lookup
+  const estimatedLookups = selectedIncludes.length + otherMechanisms.filter(m => ['mx', 'a', 'ptr'].includes(m) || m.startsWith('redirect=')).length;
 
   const hasChanges = previewRecord !== spf.record;
   const flatteningActive = spf.flattening_active;

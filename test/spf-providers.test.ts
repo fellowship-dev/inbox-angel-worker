@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPF_PROVIDERS, detectProviders, extractIncludes, buildSpfRecord } from '../dashboard/src/spf-providers';
+import { SPF_PROVIDERS, detectProviders, extractIncludes, extractOtherMechanisms, buildSpfRecord } from '../dashboard/src/spf-providers';
 
 describe('SPF_PROVIDERS', () => {
   it('has at least 15 known providers', () => {
@@ -69,6 +69,28 @@ describe('extractIncludes', () => {
   });
 });
 
+describe('extractOtherMechanisms', () => {
+  it('extracts mx mechanism', () => {
+    expect(extractOtherMechanisms('v=spf1 include:_spf.protonmail.ch mx ~all')).toEqual(['mx']);
+  });
+
+  it('extracts ip4 and ip6', () => {
+    expect(extractOtherMechanisms('v=spf1 ip4:192.168.1.0/24 ip6:2001:db8::/32 ~all')).toEqual(['ip4:192.168.1.0/24', 'ip6:2001:db8::/32']);
+  });
+
+  it('extracts redirect', () => {
+    expect(extractOtherMechanisms('v=spf1 redirect=example.com')).toEqual(['redirect=example.com']);
+  });
+
+  it('returns empty when only includes and all', () => {
+    expect(extractOtherMechanisms('v=spf1 include:_spf.google.com ~all')).toEqual([]);
+  });
+
+  it('handles a mechanism', () => {
+    expect(extractOtherMechanisms('v=spf1 a include:_spf.google.com ~all')).toEqual(['a']);
+  });
+});
+
 describe('buildSpfRecord', () => {
   it('builds record with single include', () => {
     expect(buildSpfRecord(['_spf.google.com'])).toBe('v=spf1 include:_spf.google.com ~all');
@@ -90,5 +112,13 @@ describe('buildSpfRecord', () => {
 
   it('builds empty record with just qualifier', () => {
     expect(buildSpfRecord([])).toBe('v=spf1 ~all');
+  });
+
+  it('preserves other mechanisms', () => {
+    expect(buildSpfRecord(['_spf.protonmail.ch'], '~all', ['mx'])).toBe('v=spf1 include:_spf.protonmail.ch mx ~all');
+  });
+
+  it('preserves ip4 mechanisms', () => {
+    expect(buildSpfRecord(['_spf.google.com'], '~all', ['ip4:192.168.1.0/24'])).toBe('v=spf1 include:_spf.google.com ip4:192.168.1.0/24 ~all');
   });
 });

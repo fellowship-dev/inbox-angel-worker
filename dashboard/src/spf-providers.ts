@@ -34,8 +34,17 @@ export function extractIncludes(spfRecord: string): string[] {
   return matches.map(m => m.replace('include:', ''));
 }
 
-/** Build an SPF record from a list of include domains */
-export function buildSpfRecord(includes: string[], qualifier: '~all' | '-all' = '~all'): string {
-  const parts = ['v=spf1', ...includes.map(i => `include:${i}`), qualifier];
+/** Extract non-include mechanisms from an SPF record (mx, a, ip4:, ip6:, redirect=, etc.) */
+export function extractOtherMechanisms(spfRecord: string): string[] {
+  return spfRecord.split(/\s+/).filter(part =>
+    part !== 'v=spf1' &&
+    !part.startsWith('include:') &&
+    !part.match(/^[~+?-]?all$/)
+  );
+}
+
+/** Build an SPF record from includes + other mechanisms */
+export function buildSpfRecord(includes: string[], qualifier: '~all' | '-all' = '~all', otherMechanisms: string[] = []): string {
+  const parts = ['v=spf1', ...includes.map(i => `include:${i}`), ...otherMechanisms, qualifier];
   return parts.join(' ');
 }
