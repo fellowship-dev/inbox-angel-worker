@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, enableSpfFlatten, disableSpfFlatten, getMtaStsStatus, enableMtaSts, updateMtaStsMode, refreshMtaStsMx, disableMtaSts, getWizardState } from '../api';
+import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, disableSpfFlatten, getMtaStsStatus, disableMtaSts, getWizardState } from '../api';
 import type { Domain, DomainStats, FailingSource, SpfFlatStatus, MtaStsStatus, WizardState } from '../types';
 import { useIsMobile } from '../hooks';
 
@@ -185,23 +185,160 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  return (
-    <div>
-      <a href="#/" style={s.back}>← All domains</a>
+  // Sidebar content — rendered inline on mobile (above main content) or as right column on desktop
+  const showSpfSidebar = spfFlat && (spfFlat.available || spfFlat.config);
+  const showMtaStsSidebar = mtaSts && (mtaSts.available || mtaSts.config);
+  const hasSidebar = showSpfSidebar || showMtaStsSidebar;
 
-      <div style={s.header}>
-        <h2 style={s.domainName}>{domain.domain}</h2>
-        <span style={{ ...s.badge, color: POLICY_COLOR[policy] ?? '#6b7280' }}>{policy}</span>
-        <a href={`#/domains/${id}/settings`} style={s.settingsLink}>Settings</a>
-      </div>
+  const sidebar = hasSidebar ? (
+    <div style={{
+      width: mobile ? '100%' : '280px',
+      flexShrink: 0,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: '0.75rem',
+      ...(mobile ? { marginBottom: '1.5rem' } : {}),
+    }}>
+      <h3 style={{ ...s.sectionTitle, marginBottom: 0 }}>DNS Tools</h3>
 
+      {showSpfSidebar && (() => {
+        const config = spfFlat!.config;
+        const lookupCount = spfFlat!.lookup_count ?? config?.lookup_count ?? null;
+        const isActive = !!config?.enabled;
+        const isOver = lookupCount !== null && lookupCount >= 10;
+        const isHigh = lookupCount !== null && lookupCount >= 8;
+        const countColor = isOver ? '#b91c1c' : isHigh ? '#92400e' : '#15803d';
+        const countBg = isOver ? '#fee2e2' : isHigh ? '#fef3c7' : '#dcfce7';
+        const borderColor = isActive ? '#16a34a' : isOver ? '#dc2626' : isHigh ? '#d97706' : '#e5e7eb';
+
+        return (
+          <div style={{
+            border: '1px solid #e5e7eb', borderLeft: `3px solid ${borderColor}`,
+            borderRadius: '6px', padding: '0.75rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>SPF Flattening</span>
+              {isActive ? (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: '#15803d', background: '#dcfce7' }}>
+                  Active
+                </span>
+              ) : lookupCount !== null ? (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: countColor, background: countBg }}>
+                  {lookupCount}/10 lookups
+                </span>
+              ) : (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: '#6b7280', background: '#f3f4f6' }}>
+                  Available
+                </span>
+              )}
+            </div>
+            {isActive ? (
+              <>
+                <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.4 }}>
+                  {config!.ip_count ?? '?'} IPs — re-resolved daily.
+                </p>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <a href={`#/domains/${id}/spf-flatten`} style={s.sidebarLink}>Configure →</a>
+                  <button
+                    onClick={async () => {
+                      setSpfFlatBusy(true); setSpfFlatError(null);
+                      try {
+                        await disableSpfFlatten(id);
+                        setSpfFlat({ available: spfFlat!.available, config: null, lookup_count: spfFlat!.lookup_count ?? null });
+                      } catch (e: any) { setSpfFlatError(e.message ?? 'Failed'); }
+                      finally { setSpfFlatBusy(false); }
+                    }}
+                    disabled={spfFlatBusy}
+                    style={s.sidebarDisableBtn}
+                  >
+                    {spfFlatBusy ? '…' : 'Disable'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.4 }}>
+                  Resolve SPF includes to raw IPs to stay under the 10-lookup limit.
+                </p>
+                <a href={`#/domains/${id}/spf-flatten`} style={s.sidebarLink}>Configure →</a>
+              </>
+            )}
+            {spfFlatError && <p style={{ margin: '0.3rem 0 0', fontSize: '0.72rem', color: '#dc2626' }}>{spfFlatError}</p>}
+          </div>
+        );
+      })()}
+
+      {showMtaStsSidebar && (() => {
+        const config = mtaSts!.config;
+        const isActive = !!config?.enabled;
+        const mode = config?.mode ?? 'testing';
+        const modeColor = mode === 'enforce' ? '#15803d' : '#1d4ed8';
+        const modeBg = mode === 'enforce' ? '#dcfce7' : '#dbeafe';
+        const borderColor = isActive ? (mode === 'enforce' ? '#16a34a' : '#2563eb') : '#e5e7eb';
+
+        return (
+          <div style={{
+            border: '1px solid #e5e7eb', borderLeft: `3px solid ${borderColor}`,
+            borderRadius: '6px', padding: '0.75rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>MTA-STS</span>
+              {isActive ? (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: modeColor, background: modeBg }}>
+                  {mode}
+                </span>
+              ) : (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: '#6b7280', background: '#f3f4f6' }}>
+                  Available
+                </span>
+              )}
+            </div>
+            {isActive ? (
+              <>
+                <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.4 }}>
+                  Enforcing TLS for inbound mail ({mode} mode).
+                </p>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <a href={`#/domains/${id}/mta-sts`} style={s.sidebarLink}>Configure →</a>
+                  <button
+                    onClick={async () => {
+                      setMtaStsBusy(true); setMtaStsError(null);
+                      try {
+                        await disableMtaSts(id);
+                        setMtaSts({ available: mtaSts!.available, config: null, summary: null });
+                      } catch (e: any) { setMtaStsError(e.message ?? 'Failed'); }
+                      finally { setMtaStsBusy(false); }
+                    }}
+                    disabled={mtaStsBusy}
+                    style={s.sidebarDisableBtn}
+                  >
+                    {mtaStsBusy ? '…' : 'Disable'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 0.4rem', fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.4 }}>
+                  Enforce TLS and collect failure reports for inbound mail.
+                </p>
+                <a href={`#/domains/${id}/mta-sts`} style={s.sidebarLink}>Configure →</a>
+              </>
+            )}
+            {mtaStsError && <p style={{ margin: '0.3rem 0 0', fontSize: '0.72rem', color: '#dc2626' }}>{mtaStsError}</p>}
+          </div>
+        );
+      })()}
+    </div>
+  ) : null;
+
+  const mainContent = (
+    <div style={{ flex: 1, minWidth: 0 }}>
       {wizardState && Object.values(wizardState).some(v => v !== 'complete') && (() => {
         const done = Object.values(wizardState).filter(v => v === 'complete').length;
         const total_ = Object.values(wizardState).length;
-        // Link to first incomplete step (skip domain step — always at least 2)
         const stepKeys = ['domain', 'spf', 'dkim', 'dmarc', 'routing'] as const;
         const firstIncomplete = stepKeys.findIndex((k, i) => i > 0 && wizardState[k] !== 'complete');
-        const targetStep = firstIncomplete > 0 ? firstIncomplete + 1 : 2; // 1-indexed, minimum SPF
+        const targetStep = firstIncomplete > 0 ? firstIncomplete + 1 : 2;
         return (
           <a href={`#/domains/${id}/setup/${targetStep}`} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -216,7 +353,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         );
       })()}
 
-      {/* Summary numbers — 2×2 grid on mobile */}
+      {/* Summary numbers */}
       <div style={{ ...s.summaryRow, flexWrap: 'wrap', gap: mobile ? '1rem' : '2rem' }}>
         <Stat label="Pass rate" value={passRate !== null ? `${passRate}%` : '—'} accent mobile={mobile} />
         <Stat label="Total" value={total.toLocaleString()} mobile={mobile} />
@@ -329,100 +466,6 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         </p>
       </div>
 
-      {/* SPF health card — only shown when CF creds present or flattening already active */}
-      {spfFlat && (spfFlat.available || spfFlat.config) && (
-        <SpfHealthCard
-          domainId={id}
-          status={spfFlat}
-          busy={spfFlatBusy}
-          error={spfFlatError}
-          onEnable={async () => {
-            setSpfFlatBusy(true);
-            setSpfFlatError(null);
-            try {
-              const { config } = await enableSpfFlatten(id);
-              setSpfFlat({ available: true, config, lookup_count: spfFlat?.lookup_count ?? null });
-            } catch (e: any) {
-              setSpfFlatError(e.message ?? 'Failed to enable');
-            } finally {
-              setSpfFlatBusy(false);
-            }
-          }}
-          onDisable={async () => {
-            setSpfFlatBusy(true);
-            setSpfFlatError(null);
-            try {
-              await disableSpfFlatten(id);
-              setSpfFlat({ available: spfFlat.available, config: null, lookup_count: spfFlat?.lookup_count ?? null });
-            } catch (e: any) {
-              setSpfFlatError(e.message ?? 'Failed to disable');
-            } finally {
-              setSpfFlatBusy(false);
-            }
-          }}
-        />
-      )}
-
-      {/* MTA-STS health card — only shown when CF creds present or MTA-STS already active */}
-      {mtaSts && (mtaSts.available || mtaSts.config) && (
-        <MtaStsHealthCard
-          status={mtaSts}
-          busy={mtaStsBusy}
-          error={mtaStsError}
-          onEnable={async () => {
-            setMtaStsBusy(true);
-            setMtaStsError(null);
-            try {
-              await enableMtaSts(id);
-              const updated = await getMtaStsStatus(id);
-              setMtaSts(updated);
-            } catch (e: any) {
-              setMtaStsError(e.message ?? 'Failed to enable');
-            } finally {
-              setMtaStsBusy(false);
-            }
-          }}
-          onSetMode={async (mode) => {
-            setMtaStsBusy(true);
-            setMtaStsError(null);
-            try {
-              await updateMtaStsMode(id, mode);
-              const updated = await getMtaStsStatus(id);
-              setMtaSts(updated);
-            } catch (e: any) {
-              setMtaStsError(e.message ?? 'Failed to update mode');
-            } finally {
-              setMtaStsBusy(false);
-            }
-          }}
-          onRefreshMx={async () => {
-            setMtaStsBusy(true);
-            setMtaStsError(null);
-            try {
-              await refreshMtaStsMx(id);
-              const updated = await getMtaStsStatus(id);
-              setMtaSts(updated);
-            } catch (e: any) {
-              setMtaStsError(e.message ?? 'Failed to refresh MX');
-            } finally {
-              setMtaStsBusy(false);
-            }
-          }}
-          onDisable={async () => {
-            setMtaStsBusy(true);
-            setMtaStsError(null);
-            try {
-              await disableMtaSts(id);
-              setMtaSts({ available: mtaSts.available, config: null, summary: null });
-            } catch (e: any) {
-              setMtaStsError(e.message ?? 'Failed to disable');
-            } finally {
-              setMtaStsBusy(false);
-            }
-          }}
-        />
-      )}
-
       {/* Failing sources */}
       {sources.length > 0 && (
         <div>
@@ -471,294 +514,28 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
       )}
     </div>
   );
-}
-
-function SpfHealthCard({
-  domainId, status, busy, error, onEnable, onDisable,
-}: {
-  domainId: number;
-  status: SpfFlatStatus;
-  busy: boolean;
-  error: string | null;
-  onEnable: () => void;
-  onDisable: () => void;
-}) {
-  const { config } = status;
-  // Use the domain-level cached count (populated on add + daily cron), fall back to config
-  const lookupCount = status.lookup_count ?? config?.lookup_count ?? null;
-  const isHigh = lookupCount !== null && lookupCount >= 8;
-  const isOver = lookupCount !== null && lookupCount >= 10;
-
-  const countColor = isOver ? '#b91c1c' : isHigh ? '#92400e' : '#15803d';
-  const countBg   = isOver ? '#fee2e2' : isHigh ? '#fef3c7' : '#dcfce7';
-
-  const borderColor = config
-    ? '#16a34a'
-    : isOver ? '#dc2626'
-    : isHigh ? '#d97706'
-    : '#e5e7eb';
-
-  const lastSync = config?.last_flattened_at
-    ? new Date(config.last_flattened_at * 1000).toLocaleString('en-GB', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-      })
-    : null;
 
   return (
-    <div style={{
-      border: '1px solid #e5e7eb',
-      borderLeft: `4px solid ${borderColor}`,
-      borderRadius: '8px',
-      padding: '1rem 1.25rem',
-      marginBottom: '2rem',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+    <div>
+      <a href="#/" style={s.back}>← All domains</a>
+
+      <div style={s.header}>
+        <h2 style={s.domainName}>{domain.domain}</h2>
+        <span style={{ ...s.badge, color: POLICY_COLOR[policy] ?? '#6b7280' }}>{policy}</span>
+        <a href={`#/domains/${id}/settings`} style={s.settingsLink}>Settings</a>
+      </div>
+
+      {mobile ? (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
-            <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>SPF lookup depth</span>
-            {lookupCount !== null && (
-              <span style={{
-                padding: '1px 7px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
-                color: countColor, background: countBg,
-              }}>
-                {lookupCount}/10
-              </span>
-            )}
-            {config && (
-              <span style={{
-                padding: '1px 7px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
-                color: '#15803d', background: '#dcfce7',
-              }}>
-                ✓ flattening active
-              </span>
-            )}
-          </div>
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280', lineHeight: 1.5 }}>
-            {config
-              ? `${config.ip_count ?? '?'} IPs in flattened record — lookup count reduced to 1. Re-resolved daily.${lastSync ? ` Last synced ${lastSync}.` : ''}`
-              : isOver
-              ? 'SPF requires more than 10 DNS lookups — receivers may return permerror and silently drop your mail. Enable flattening to resolve all includes to raw IPs.'
-              : isHigh
-              ? `SPF requires ${lookupCount}/10 lookups — close to the limit. Adding another mail provider could break delivery. Consider enabling flattening.`
-              : lookupCount !== null
-              ? `SPF requires ${lookupCount}/10 DNS lookups — within safe limits.`
-              : 'SPF lookup depth not yet measured — will populate within a few seconds of domain setup.'}
-          </p>
-          {config?.last_error && (
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#dc2626' }}>
-              Last error: {config.last_error}
-            </p>
-          )}
-          {error && (
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#dc2626' }}>{error}</p>
-          )}
-          {config?.canonical_record && (
-            <details style={{ marginTop: '0.5rem' }}>
-              <summary style={{ fontSize: '0.75rem', color: '#9ca3af', cursor: 'pointer' }}>
-                Original record
-              </summary>
-              <code style={{
-                display: 'block', marginTop: '0.3rem', fontSize: '0.72rem',
-                background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '4px',
-                padding: '0.35rem 0.5rem', wordBreak: 'break-all', color: '#374151',
-              }}>{config.canonical_record}</code>
-            </details>
-          )}
+          {sidebar}
+          {mainContent}
         </div>
-        <div style={{ flexShrink: 0 }}>
-          {config ? (
-            <button
-              onClick={onDisable}
-              disabled={busy}
-              style={{
-                padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                background: '#fff', color: '#6b7280', border: '1px solid #d1d5db',
-                borderRadius: '6px', opacity: busy ? 0.6 : 1,
-              }}
-            >
-              {busy ? 'Working…' : 'Disable'}
-            </button>
-          ) : (isHigh || isOver) && (
-            <button
-              onClick={onEnable}
-              disabled={busy}
-              style={{
-                padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                background: '#111827', color: '#fff', border: 'none',
-                borderRadius: '6px', opacity: busy ? 0.6 : 1,
-              }}
-            >
-              {busy ? 'Flattening…' : 'Enable flattening'}
-            </button>
-          )}
+      ) : (
+        <div style={{ display: 'flex', gap: '2rem' }}>
+          {mainContent}
+          {sidebar}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function MtaStsHealthCard({
-  status, busy, error, onEnable, onSetMode, onRefreshMx, onDisable,
-}: {
-  status: MtaStsStatus;
-  busy: boolean;
-  error: string | null;
-  onEnable: () => void;
-  onSetMode: (mode: 'testing' | 'enforce') => void;
-  onRefreshMx: () => void;
-  onDisable: () => void;
-}) {
-  const { config, summary } = status;
-  const isActive = !!config?.enabled;
-  const mode = config?.mode ?? 'testing';
-  const mxHosts = config?.mx_hosts ? config.mx_hosts.split(',').filter(Boolean) : [];
-
-  const borderColor = isActive
-    ? mode === 'enforce' ? '#16a34a' : '#2563eb'
-    : '#e5e7eb';
-
-  const modeColor   = mode === 'enforce' ? '#15803d' : '#1d4ed8';
-  const modeBg      = mode === 'enforce' ? '#dcfce7' : '#dbeafe';
-
-  const updatedAt = config?.updated_at
-    ? new Date(config.updated_at * 1000).toLocaleString('en-GB', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-      })
-    : null;
-
-  return (
-    <div style={{
-      border: '1px solid #e5e7eb',
-      borderLeft: `4px solid ${borderColor}`,
-      borderRadius: '8px',
-      padding: '1rem 1.25rem',
-      marginBottom: '2rem',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: '0.875rem' }}>MTA-STS / TLS-RPT</span>
-            {isActive && (
-              <span style={{
-                padding: '1px 7px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
-                color: modeColor, background: modeBg,
-              }}>
-                {mode}
-              </span>
-            )}
-          </div>
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280', lineHeight: 1.5 }}>
-            {isActive
-              ? `Protecting inbound TLS via MTA-STS (${mode} mode). ${mxHosts.length} MX host${mxHosts.length !== 1 ? 's' : ''} in policy.${updatedAt ? ` Updated ${updatedAt}.` : ''}`
-              : 'Enable MTA-STS to instruct sending MTAs to enforce TLS when delivering to your domain, and collect TLS-RPT failure reports.'}
-          </p>
-          {isActive && summary && (
-            <p style={{ margin: '0.3rem 0 0', fontSize: '0.78rem', color: '#6b7280' }}>
-              Last 30 days: {summary.total_success.toLocaleString()} successful sessions,{' '}
-              {summary.total_failure > 0
-                ? <span style={{ color: '#dc2626', fontWeight: 600 }}>{summary.total_failure.toLocaleString()} failures</span>
-                : <span style={{ color: '#15803d' }}>0 failures</span>
-              }{' '}({summary.report_count} report{summary.report_count !== 1 ? 's' : ''})
-            </p>
-          )}
-          {isActive && mxHosts.length > 0 && (
-            <details style={{ marginTop: '0.5rem' }}>
-              <summary style={{ fontSize: '0.75rem', color: '#9ca3af', cursor: 'pointer' }}>MX hosts in policy</summary>
-              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.25rem', fontSize: '0.72rem', color: '#374151' }}>
-                {mxHosts.map(h => <li key={h}>{h}</li>)}
-              </ul>
-            </details>
-          )}
-          {config?.last_error && (
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#dc2626' }}>
-              Last error: {config.last_error}
-            </p>
-          )}
-          {error && (
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#dc2626' }}>{error}</p>
-          )}
-        </div>
-        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
-          {!isActive ? (
-            <button
-              onClick={onEnable}
-              disabled={busy}
-              style={{
-                padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                background: '#111827', color: '#fff', border: 'none',
-                borderRadius: '6px', opacity: busy ? 0.6 : 1,
-              }}
-            >
-              {busy ? 'Enabling…' : 'Enable MTA-STS'}
-            </button>
-          ) : (
-            <>
-              {mode === 'testing' && (() => {
-                const agedays = config?.created_at
-                  ? (Date.now() / 1000 - config.created_at) / 86400
-                  : 0;
-                const failures = summary?.total_failure ?? 0;
-                const ready = agedays >= 7 && failures === 0;
-                const daysLeft = Math.ceil(7 - agedays);
-                return ready ? (
-                  <button
-                    onClick={() => onSetMode('enforce')}
-                    disabled={busy}
-                    style={{
-                      padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                      background: '#15803d', color: '#fff', border: 'none',
-                      borderRadius: '6px', opacity: busy ? 0.6 : 1,
-                    }}
-                  >
-                    {busy ? 'Working…' : 'Graduate to enforce'}
-                  </button>
-                ) : (
-                  <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                    {failures > 0
-                      ? `Fix ${failures} TLS failure${failures !== 1 ? 's' : ''} first`
-                      : `Graduate available in ${daysLeft}d`}
-                  </span>
-                );
-              })()}
-              {mode === 'enforce' && (
-                <button
-                  onClick={() => onSetMode('testing')}
-                  disabled={busy}
-                  style={{
-                    padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                    background: '#fff', color: '#1d4ed8', border: '1px solid #93c5fd',
-                    borderRadius: '6px', opacity: busy ? 0.6 : 1,
-                  }}
-                >
-                  {busy ? 'Working…' : 'Revert to testing'}
-                </button>
-              )}
-              <button
-                onClick={onRefreshMx}
-                disabled={busy}
-                style={{
-                  padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                  background: '#fff', color: '#374151', border: '1px solid #d1d5db',
-                  borderRadius: '6px', opacity: busy ? 0.6 : 1,
-                }}
-              >
-                {busy ? 'Working…' : 'Refresh MX'}
-              </button>
-              <button
-                onClick={onDisable}
-                disabled={busy}
-                style={{
-                  padding: '0.35rem 0.85rem', fontSize: '0.8rem', cursor: busy ? 'default' : 'pointer',
-                  background: '#fff', color: '#6b7280', border: '1px solid #d1d5db',
-                  borderRadius: '6px', opacity: busy ? 0.6 : 1,
-                }}
-              >
-                {busy ? 'Working…' : 'Disable'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -812,4 +589,10 @@ const s = {
   code: { fontFamily: 'monospace', fontSize: '0.8rem', color: '#111827' } as const,
   settingsLink: { marginLeft: 'auto', fontSize: '0.8rem', color: '#6b7280', textDecoration: 'none' } as const,
   sourceCard: { padding: '0.75rem', border: '1px solid #f3f4f6', borderRadius: '6px', background: '#fff' } as const,
+  sidebarLink: { fontSize: '0.75rem', color: '#2563eb', textDecoration: 'none', fontWeight: 600 } as const,
+  sidebarDisableBtn: {
+    padding: '0.15rem 0.5rem', fontSize: '0.72rem', cursor: 'pointer',
+    background: '#fff', color: '#6b7280', border: '1px solid #d1d5db',
+    borderRadius: '4px', fontFamily: 'inherit',
+  } as const,
 };
