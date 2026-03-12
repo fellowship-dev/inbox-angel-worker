@@ -960,7 +960,20 @@ async function _handleApi(
       const rd = reportsDomain();
       const DKIM_SELECTORS = ['google', 'selector1', 'selector2', 'mail', 'default', 'k1', 'dkim', 'mandrill', 'mailjet', 'sendgrid', 'smtp', 'pm', 'brevo', 'resend', 'mxroute', 'zoho'];
 
-      const [dmarcData, routingData, dkimData] = await Promise.all([
+      const [dmarcData, routingData, dkimData, spfLiveData] = await Promise.all([
+        // SPF: DoH lookup for {domain} TXT records → find v=spf1
+        fetch(`https://cloudflare-dns.com/dns-query?name=${domain.domain}&type=TXT`, { headers: { Accept: 'application/dns-json' } })
+          .then(r => r.json() as Promise<{ Answer?: { data: string }[] }>)
+          .then(d => {
+            const records = d.Answer ?? [];
+            for (const r of records) {
+              const clean = r.data?.replace(/^"|"$/g, '') ?? '';
+              if (clean.startsWith('v=spf1')) return clean;
+            }
+            return null;
+          })
+          .catch(() => null),
+
         // DMARC: DoH lookup for _dmarc.{domain}
         fetch(`https://cloudflare-dns.com/dns-query?name=_dmarc.${domain.domain}&type=TXT`, { headers: { Accept: 'application/dns-json' } })
           .then(r => r.json() as Promise<{ Answer?: { data: string }[] }>)
@@ -1055,7 +1068,7 @@ async function _handleApi(
         rua_address: domain.rua_address,
         cf_available: !!(env.CLOUDFLARE_API_TOKEN && getZoneId()),
         dmarc: dmarcData,
-        spf: { record: domain.spf_record ?? null, lookup_count: domain.spf_lookup_count ?? null, flattening_active: !!(spfFlatConfig?.enabled) },
+        spf: { record: spfLiveData ?? domain.spf_record ?? null, lookup_count: domain.spf_lookup_count ?? null, flattening_active: !!(spfFlatConfig?.enabled) },
         dkim: dkimData,
         routing: { ...routingData, reports_domain: rd ?? null },
       });
