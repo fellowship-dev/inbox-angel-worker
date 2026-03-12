@@ -14,6 +14,8 @@ import { AuditLog } from './pages/AuditLog';
 import { AcceptInvite } from './pages/AcceptInvite';
 import { ResetPassword } from './pages/ResetPassword';
 import { Onboarding } from './pages/Onboarding';
+import { SpfFlattenWizard } from './pages/SpfFlattenWizard';
+import { MtaStsWizard } from './pages/MtaStsWizard';
 import { AuthGate } from './AuthGate';
 import { getVersion, logout, type VersionInfo } from './api';
 
@@ -124,6 +126,18 @@ export function App() {
 
   if (!hasKey) return <AuthGate onSave={() => setHasKey(true)} />;
 
+  // SPF Flatten wizard — full-screen, outside nav shell
+  const spfFlatMatch = route.match(/^\/domains\/(\d+)\/spf-flatten$/);
+  if (spfFlatMatch) {
+    return <SpfFlattenWizard domainId={parseInt(spfFlatMatch[1], 10)} onUnauthorized={handleUnauth} />;
+  }
+
+  // MTA-STS wizard — full-screen, outside nav shell
+  const mtaStsMatch = route.match(/^\/domains\/(\d+)\/mta-sts$/);
+  if (mtaStsMatch) {
+    return <MtaStsWizard domainId={parseInt(mtaStsMatch[1], 10)} onUnauthorized={handleUnauth} />;
+  }
+
   // Setup wizard — /domains/:id/setup/:step (1-indexed) or /setup (auto-resolve domain)
   const setupMatch = route.match(/^\/domains\/(\d+)\/setup(?:\/(\d+))?$/);
   if (setupMatch) {
@@ -199,7 +213,9 @@ export function App() {
          !/^\/domains\/\d+\/explore$/.test(route) &&
          !/^\/domains\/\d+\/anomalies$/.test(route) &&
          !/^\/domains\/\d+\/reports$/.test(route) &&
-         !/^\/domains\/\d+\/reports\/\d{4}-\d{2}-\d{2}$/.test(route) && (
+         !/^\/domains\/\d+\/reports\/\d{4}-\d{2}-\d{2}$/.test(route) &&
+         !/^\/domains\/\d+\/spf-flatten$/.test(route) &&
+         !/^\/domains\/\d+\/mta-sts$/.test(route) && (
           <p style={{ color: '#9ca3af' }}>Page not found. <a href="#/">Back to overview</a></p>
         )}
       </main>
@@ -210,7 +226,7 @@ export function App() {
 const styles = {
   shell: {
     fontFamily: 'system-ui, -apple-system, sans-serif',
-    maxWidth: '760px',
+    maxWidth: '1040px',
     margin: '0 auto',
     padding: '0 1.5rem',
     color: '#111827',

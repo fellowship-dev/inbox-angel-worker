@@ -183,6 +183,12 @@ export async function enableSpfFlatten(domainId: number): Promise<{ ok: boolean;
   return res.json();
 }
 
+export async function previewSpfFlatten(domainId: number): Promise<{ flattened_record: string; ip_count: number }> {
+  const res = await apiFetch(`/api/domains/${domainId}/spf-flatten/preview`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function disableSpfFlatten(domainId: number): Promise<void> {
   const res = await apiFetch(`/api/domains/${domainId}/spf-flatten`, { method: 'DELETE' });
   if (!res.ok) await throwApiError(res);
