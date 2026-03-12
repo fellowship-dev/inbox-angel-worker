@@ -3,18 +3,7 @@ import { getDomains, getOnboardingStatus, applyDmarc, applySpf, getSpfLookupCoun
 import { SPF_PROVIDERS, detectProviders, extractIncludes, extractOtherMechanisms, buildSpfRecord, matchDkimProvider, findUnsignedSpfProviders } from '../email-service-providers';
 import type { EmailProvider } from '../email-service-providers';
 import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
-
-type Severity = 'good' | 'info' | 'warning' | 'error';
-
-const SEV_COLOR: Record<Severity, string> = {
-  good: '#16a34a', info: '#2563eb', warning: '#d97706', error: '#dc2626',
-};
-const SEV_BG: Record<Severity, string> = {
-  good: '#f0fdf4', info: '#eff6ff', warning: '#fffbeb', error: '#fef2f2',
-};
-const SEV_LABEL: Record<Severity, string> = {
-  good: '✓ All good', info: 'ℹ Info', warning: '⚠ Needs attention', error: '✕ Action required',
-};
+import { type Severity, SEV_COLOR, SEV_BG, SEV_LABEL } from '../components/WizardKit';
 
 function buildRecommendedRecord(currentRecord: string | null, targetPolicy: string, ruaAddress: string): string {
   if (!currentRecord) return `v=DMARC1; p=${targetPolicy}; rua=mailto:${ruaAddress}`;
