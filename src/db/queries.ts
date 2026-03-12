@@ -30,13 +30,6 @@ export function updateDomainDmarcPolicy(db: D1Database, domainId: number, policy
     .bind(policy, domainId).run();
 }
 
-export function updateDomainDnsRecord(db: D1Database, domainId: number, recordId: string) {
-  return db.prepare(`
-    UPDATE domains SET dns_record_id = ?, auth_record_provisioned = 1, updated_at = unixepoch()
-    WHERE id = ?
-  `).bind(recordId, domainId).run();
-}
-
 // ── Check Results ────────────────────────────────────────────
 
 export function insertCheckResult(db: D1Database, r: Omit<CheckResult, 'id' | 'created_at'>) {

@@ -20,7 +20,6 @@ const MIGRATIONS: { version: number; sql: string }[] = [
         dmarc_policy TEXT,
         dmarc_pct INTEGER,
         spf_record TEXT,
-        dkim_configured INTEGER NOT NULL DEFAULT 0,
         auth_record_provisioned INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())

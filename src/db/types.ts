@@ -1,6 +1,5 @@
 // TypeScript types mirroring the D1 schema
 
-export type Plan = 'free' | 'starter' | 'pro' | 'enterprise';
 export type DmarcPolicy = 'none' | 'quarantine' | 'reject';
 export type SpfResult = 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'permerror' | 'temperror';
 export type DkimResult = 'pass' | 'fail' | 'none';
@@ -15,7 +14,6 @@ export interface Domain {
   dmarc_policy: DmarcPolicy | null;
   dmarc_pct: number | null;
   spf_record: string | null;
-  dkim_configured: 0 | 1;
   auth_record_provisioned: 0 | 1;
   dns_record_id: string | null;  // Cloudflare DNS record ID for deprovision
   spf_lookup_count: number | null; // cached SPF lookup depth (updated on add + daily cron)

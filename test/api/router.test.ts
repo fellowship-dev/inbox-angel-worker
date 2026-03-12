@@ -224,7 +224,7 @@ describe('POST /api/domains', () => {
     const domainRow: Partial<Domain> = { id: 1, domain: 'acme.com', rua_address: 'rua@reports.inboxangel.io'};
     const env = makeEnv();
     // getAllDomains → empty at first
-    // insertDomain, updateDomainDnsRecord, logAudit all use default mock
+    // insertDomain, logAudit all use default mock
     // getDomainById needs to return the domain row
     (env.DB.prepare as any).mockReturnValue({
       bind: vi.fn().mockReturnValue({

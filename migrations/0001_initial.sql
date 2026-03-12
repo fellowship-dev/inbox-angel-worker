@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS domains (
   dmarc_policy TEXT,                       -- none | quarantine | reject
   dmarc_pct INTEGER,                       -- 0-100
   spf_record TEXT,                         -- raw SPF record
-  dkim_configured INTEGER NOT NULL DEFAULT 0,  -- boolean
   -- Authorization record provisioned in Cloudflare DNS
   auth_record_provisioned INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),

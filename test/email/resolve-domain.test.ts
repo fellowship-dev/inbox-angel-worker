@@ -11,7 +11,6 @@ const DOMAIN: Domain = {
   dmarc_policy: 'quarantine',
   dmarc_pct: 100,
   spf_record: 'v=spf1 -all',
-  dkim_configured: 1,
   auth_record_provisioned: 1,
   dns_record_id: null,
   spf_lookup_count: null,

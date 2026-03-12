@@ -67,8 +67,8 @@ const lines: string[] = [
 
 for (const d of DOMAINS) {
   lines.push(
-    `INSERT OR IGNORE INTO domains (id, domain, rua_address, dmarc_policy, dmarc_pct, spf_record, dkim_configured, auth_record_provisioned, created_at, updated_at)`,
-    `VALUES (${d.id}, '${d.domain}', 'rua@reports.inboxangel.io', '${d.policy}', ${d.pct}, '${d.spf}', 1, 1, ${NOW - 90 * DAY}, ${NOW});`,
+    `INSERT OR IGNORE INTO domains (id, domain, rua_address, dmarc_policy, dmarc_pct, spf_record, auth_record_provisioned, created_at, updated_at)`,
+    `VALUES (${d.id}, '${d.domain}', 'rua@reports.inboxangel.io', '${d.policy}', ${d.pct}, '${d.spf}', 1, ${NOW - 90 * DAY}, ${NOW});`,
   );
 }
 

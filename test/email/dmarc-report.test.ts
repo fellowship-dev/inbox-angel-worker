@@ -45,7 +45,6 @@ const DOMAIN: Domain = {
   dmarc_policy: 'reject',
   dmarc_pct: 100,
   spf_record: null,
-  dkim_configured: 1,
   auth_record_provisioned: 1,
   dns_record_id: null,
   spf_lookup_count: null,
