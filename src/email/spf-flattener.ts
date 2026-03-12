@@ -60,7 +60,7 @@ interface CollectResult {
   allQualifier: string;  // terminal ~all / -all / +all / ?all from root record
 }
 
-async function collectIps(
+export async function collectIps(
   domain: string,
   visited = new Set<string>(),
   root = true,

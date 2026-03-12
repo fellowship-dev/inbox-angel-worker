@@ -102,7 +102,7 @@ import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/em
 import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
 import { logAudit } from '../audit/log';
-import { flattenSpf, restoreSpf } from '../email/spf-flattener';
+import { flattenSpf, restoreSpf, collectIps, buildFlatRecord } from '../email/spf-flattener';
 import { lookupSpf, countSpfLookupsFromRecord } from '../email/dns-check';
 import { getAllDkimSelectors } from '../../dashboard/src/email-service-providers';
 import {
@@ -1421,6 +1421,22 @@ async function _handleApi(
         before_value: removed ? { email: removed.email, name: removed.name, role: removed.role } : null,
       }, ctx);
       return json({ ok: true });
+    }
+
+    // SPF flatten preview — resolve IPs without writing to DNS
+    const spfPreviewMatch = path.match(/^\/api\/domains\/([^/]+)\/spf-flatten\/preview$/);
+    if (spfPreviewMatch && method === 'GET') {
+      const id = parseInt(spfPreviewMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+      try {
+        const { ips, extra, allQualifier } = await collectIps(domain.domain);
+        const flattened_record = buildFlatRecord(ips, extra, allQualifier);
+        return json({ flattened_record, ip_count: ips.length });
+      } catch (e: any) {
+        return err(e.message ?? 'Failed to resolve SPF', 500);
+      }
     }
 
     // SPF flatten routes — GET/POST/DELETE /api/domains/:id/spf-flatten

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getSpfFlattenStatus, getSpfLookupCount, enableSpfFlatten, getOnboardingStatus } from '../api';
+import { getSpfFlattenStatus, getSpfLookupCount, enableSpfFlatten, getOnboardingStatus, previewSpfFlatten } from '../api';
 import type { SpfFlatStatus } from '../types';
 import { CodeBlock, StepProgress, StepNav, useCopyClipboard, wizardStyles as ws } from '../components/WizardKit';
 import { useIsMobile } from '../hooks';
@@ -48,9 +48,19 @@ export function SpfFlattenWizard({ domainId, onUnauthorized }: Props) {
           setLookupCount(count);
         }
 
-        // If already flattened, show it
+        // Get flattened preview — from config if active, otherwise resolve live via API
         if (flat.config?.flattened_record) {
           setFlattenedPreview(flat.config.flattened_record);
+        } else {
+          // Resolve IPs without enabling — preview only
+          try {
+            const preview = await previewSpfFlatten(domainId);
+            if (!cancelled) {
+              setFlattenedPreview(preview.flattened_record);
+            }
+          } catch {
+            // Non-critical — wizard still works without preview
+          }
         }
       } catch (e: any) {
         if (cancelled) return;
@@ -175,8 +185,8 @@ export function SpfFlattenWizard({ domainId, onUnauthorized }: Props) {
               {flattenedPreview ? (
                 <CodeBlock value={flattenedPreview} onCopy={() => copy(flattenedPreview)} copied={copied} />
               ) : (
-                <p style={{ fontSize: '0.82rem', color: '#6b7280', margin: '0.25rem 0 0' }}>
-                  Each <code style={ws.inline}>include:</code> will be replaced with the raw <code style={ws.inline}>ip4:</code>/<code style={ws.inline}>ip6:</code> addresses it resolves to — the exact record will be shown after enabling.
+                <p style={{ fontSize: '0.82rem', color: '#9ca3af', margin: '0.25rem 0 0' }}>
+                  Could not resolve IPs — DNS may be unreachable. The record will be generated when flattening is enabled.
                 </p>
               )}
             </div>
