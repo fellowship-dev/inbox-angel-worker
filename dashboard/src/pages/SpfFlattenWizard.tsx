@@ -142,43 +142,45 @@ export function SpfFlattenWizard({ domainId, onUnauthorized }: Props) {
         {step === 1 && (
           <>
             <h3 style={ws.stepTitle}>Compare: original vs flattened</h3>
-            <div style={{
-              display: 'flex', gap: '1rem',
-              flexDirection: mobile ? 'column' : 'row' as any,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={ws.label}>Original record</p>
+            <p style={ws.body}>
+              Flattening resolves all <code style={ws.inline}>include:</code> mechanisms to raw IP addresses, reducing DNS lookups to 1.
+              The flattened record is re-resolved daily to pick up upstream provider changes.
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                <p style={{ ...ws.label, marginBottom: 0 }}>Original record</p>
                 {lookupCount !== null && (
                   <span style={{
-                    display: 'inline-block', marginBottom: '0.5rem',
                     padding: '2px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
                     color: countColor, background: countBg,
                   }}>
                     {lookupCount} lookups
                   </span>
                 )}
-                {spfRecord && <CodeBlock value={spfRecord} onCopy={() => copy(spfRecord)} copied={copied} />}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={ws.label}>Flattened record</p>
+              {spfRecord && <CodeBlock value={spfRecord} onCopy={() => copy(spfRecord)} copied={copied} />}
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                <p style={{ ...ws.label, marginBottom: 0 }}>Flattened record</p>
                 <span style={{
-                  display: 'inline-block', marginBottom: '0.5rem',
                   padding: '2px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700,
                   color: '#15803d', background: '#dcfce7',
                 }}>
                   1 lookup
                 </span>
-                {flattenedPreview ? (
-                  <CodeBlock value={flattenedPreview} onCopy={() => copy(flattenedPreview)} copied={copied} />
-                ) : (
-                  <p style={{ fontSize: '0.82rem', color: '#9ca3af' }}>Preview will be generated when flattening is enabled.</p>
-                )}
               </div>
+              {flattenedPreview ? (
+                <CodeBlock value={flattenedPreview} onCopy={() => copy(flattenedPreview)} copied={copied} />
+              ) : (
+                <p style={{ fontSize: '0.82rem', color: '#6b7280', margin: '0.25rem 0 0' }}>
+                  Each <code style={ws.inline}>include:</code> will be replaced with the raw <code style={ws.inline}>ip4:</code>/<code style={ws.inline}>ip6:</code> addresses it resolves to — the exact record will be shown after enabling.
+                </p>
+              )}
             </div>
-            <p style={{ ...ws.body, marginTop: '1rem' }}>
-              Flattening resolves all <code style={ws.inline}>include:</code> mechanisms to raw IP addresses, reducing DNS lookups to 1.
-              The flattened record is re-resolved daily to pick up IP changes.
-            </p>
+
             <StepNav onNext={() => setStep(2)} showBack onBack={() => setStep(0)} showSkip={false} />
           </>
         )}
