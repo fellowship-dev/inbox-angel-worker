@@ -121,12 +121,7 @@ export function SpfFlattenWizard({ domainId, onUnauthorized }: Props) {
                     Your SPF record is within safe limits. Flattening is optional but still available.
                   </div>
                 )}
-                {flattenedPreview && (
-                  <>
-                    <p style={{ ...ws.body, marginTop: '1rem' }}>Flattened preview:</p>
-                    <CodeBlock value={flattenedPreview} onCopy={() => copy(flattenedPreview)} copied={copied} />
-                  </>
-                )}
+                {/* Flattened preview shown in Compare step */}
               </>
             ) : (
               <p style={ws.body}>No SPF record found for this domain. Add one during setup first.</p>
@@ -208,8 +203,11 @@ export function SpfFlattenWizard({ domainId, onUnauthorized }: Props) {
             ) : (
               <>
                 <p style={ws.body}>
-                  This will replace your SPF TXT record with a flattened version containing raw IP addresses.
-                  The original record is preserved and used to re-resolve IPs daily.
+                  This will <strong>immediately replace</strong> your SPF TXT record in Cloudflare DNS with the flattened version.
+                  Your current record will be stored — if you disable flattening in the future, the original record will be restored.
+                </p>
+                <p style={ws.body}>
+                  The flattened record is <strong>re-resolved daily</strong>, so if your mail providers add or change IPs, the record updates automatically.
                 </p>
                 {spfRecord && (
                   <div style={{ marginBottom: '1rem' }}>
