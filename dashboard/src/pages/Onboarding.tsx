@@ -708,6 +708,9 @@ function DmarcStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNex
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [provisioningAuth, setProvisioningAuth] = useState(false);
+  const [authProvisioned, setAuthProvisioned] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const recommended = buildRecommendedRecord(dmarc.current_record, 'none', dmarc.rua_address);
 
@@ -784,6 +787,54 @@ function DmarcStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNex
             </button>
           </div>
           {applyError && <p style={s.error}>{applyError}</p>}
+        </div>
+      )}
+
+      {/* Cross-domain DMARC report authorization record (RFC 7489 §7.1) */}
+      {dmarc.auth_record && (
+        <div style={{ marginTop: '1rem', padding: '0.75rem', background: (dmarc.auth_record.found || authProvisioned) ? '#e8f5e9' : '#fff3e0', borderRadius: '6px', border: `1px solid ${(dmarc.auth_record.found || authProvisioned) ? '#a5d6a7' : '#ffcc80'}` }}>
+          <p style={{ ...s.label, marginBottom: '0.25rem' }}>Report authorization record</p>
+          {(dmarc.auth_record.found || authProvisioned) ? (
+            <p style={s.body}>
+              <strong style={{ color: '#2e7d32' }}>Found.</strong>{' '}
+              <code style={s.inline}>{dmarc.auth_record.record_name}</code> authorizes this domain to receive DMARC reports.
+            </p>
+          ) : (
+            <div>
+              <p style={s.body}>
+                <strong style={{ color: '#e65100' }}>Missing.</strong>{' '}
+                RFC 7489 requires a TXT record to authorize cross-domain report delivery.
+                Without it, some providers may silently drop DMARC reports.
+              </p>
+              {dmarc.auth_record.record_name && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <p style={s.body}>Required record:</p>
+                  <CodeBlock value={`${dmarc.auth_record.record_name}  TXT  "v=DMARC1;"`} onCopy={() => copy(`${dmarc.auth_record.record_name}  TXT  "v=DMARC1;"`)} copied={copied} />
+                  {cf_available && dmarc.current_record && (
+                    <button
+                      onClick={async () => {
+                        setProvisioningAuth(true);
+                        setAuthError(null);
+                        try {
+                          await applyDmarc(status.domain_id, dmarc.current_record!);
+                          setAuthProvisioned(true);
+                        } catch (e: any) {
+                          setAuthError(e.message ?? 'Failed to provision');
+                        } finally {
+                          setProvisioningAuth(false);
+                        }
+                      }}
+                      disabled={provisioningAuth}
+                      style={{ ...s.actionBtn, marginTop: '0.5rem', background: '#e65100', opacity: provisioningAuth ? 0.6 : 1 }}
+                    >
+                      {provisioningAuth ? 'Provisioning…' : 'Create via Cloudflare'}
+                    </button>
+                  )}
+                  {authError && <p style={s.error}>{authError}</p>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

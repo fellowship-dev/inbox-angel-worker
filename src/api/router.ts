@@ -97,7 +97,7 @@ import {
   getAuditLog,
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
-import { deprovisionDomain } from '../dns/provision';
+import { deprovisionDomain, provisionDomain } from '../dns/provision';
 import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
 import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
@@ -961,7 +961,7 @@ async function _handleApi(
       const rd = reportsDomain();
       const DKIM_SELECTORS = getAllDkimSelectors();
 
-      const [spfLiveData, dmarcData, routingData, dkimData, nullSenderData] = await Promise.all([
+      const [spfLiveData, dmarcData, routingData, dkimData, nullSenderData, authRecordData] = await Promise.all([
         // SPF: DoH lookup for {domain} TXT records → find v=spf1
         fetch(`https://cloudflare-dns.com/dns-query?name=${domain.domain}&type=TXT`, { headers: { Accept: 'application/dns-json' } })
           .then(r => r.json() as Promise<{ Answer?: { data: string }[] }>)
@@ -1081,6 +1081,20 @@ async function _handleApi(
           ]);
           return { spf: spfRes, dmarc: dmarcRes };
         })(),
+
+        // Auth record: DoH check for {domain}._report._dmarc.{reportsDomain}
+        (async () => {
+          if (!rd) return { found: false, record_name: null };
+          const authName = `${domain.domain}._report._dmarc.${rd}`;
+          try {
+            const d = await fetch(`https://cloudflare-dns.com/dns-query?name=${authName}&type=TXT`, { headers: { Accept: 'application/dns-json' } })
+              .then(r => r.json() as Promise<{ Answer?: { data: string }[] }>);
+            const found = (d.Answer ?? []).some(r => r.data?.replace(/^"|"$/g, '').startsWith('v=DMARC1'));
+            return { found, record_name: authName };
+          } catch {
+            return { found: false, record_name: authName };
+          }
+        })(),
       ]);
 
       const spfFlatConfig = await getSpfFlattenConfig(env.DB, domain.id);
@@ -1089,7 +1103,7 @@ async function _handleApi(
         domain: domain.domain,
         rua_address: domain.rua_address,
         cf_available: !!(env.CLOUDFLARE_API_TOKEN && getZoneId()),
-        dmarc: dmarcData,
+        dmarc: { ...dmarcData, auth_record: authRecordData },
         spf: { record: spfLiveData ?? domain.spf_record ?? null, lookup_count: domain.spf_lookup_count ?? null, flattening_active: !!(spfFlatConfig?.enabled) },
         dkim: dkimData,
         routing: { ...routingData, reports_domain: rd ?? null, null_sender_spf: nullSenderData.spf, null_sender_dmarc: nullSenderData.dmarc },
@@ -1175,7 +1189,27 @@ async function _handleApi(
         after_value: { type: 'TXT', name: recordName, content: body.record },
       }, ctx);
 
-      return json({ ok: true, record: body.record, created: !existingId });
+      // Provision the cross-domain DMARC authorization record if not already present
+      let authProvisioned = false;
+      const rd = reportsDomain();
+      if (rd && !domain.dns_record_id) {
+        try {
+          const authResult = await provisionDomain(env, domain.domain, {
+            db: env.DB!, actor_id: userBySession?.id ?? null,
+            actor_email: userBySession?.email ?? null, actor_type: 'user', ctx,
+          });
+          if (authResult.recordId) {
+            await env.DB!.prepare('UPDATE domains SET dns_record_id = ?, auth_record_provisioned = 1 WHERE id = ?')
+              .bind(authResult.recordId, id).run();
+            authProvisioned = true;
+          }
+        } catch (e) {
+          // Non-fatal — DMARC record itself was applied; auth record can be retried
+          console.warn(`[apply-dmarc] auth record provisioning failed for ${domain.domain}:`, e);
+        }
+      }
+
+      return json({ ok: true, record: body.record, created: !existingId, auth_record_provisioned: authProvisioned || !!domain.dns_record_id });
     }
 
     // POST /api/spf-lookup-count — count real DNS lookups for an arbitrary SPF record

@@ -158,3 +158,76 @@ export async function ensureEmailRouting(env: Env): Promise<EmailRoutingResult> 
   const parts = [mxCreated ? 'MX records created' : null, !catchAllActive ? 'catch-all rule set' : null].filter(Boolean);
   return { status: 'newly_configured', detail: `${parts.join(' + ')} for ${domain}` };
 }
+
+/**
+ * Ensures null-sender protection records exist on the reports subdomain:
+ *   - SPF: `v=spf1 -all` on {reportsDomain}
+ *   - DMARC: `v=DMARC1; p=reject;` on `_dmarc.{reportsDomain}`
+ *
+ * Returns an array of 2 action strings describing what happened for each record.
+ */
+export async function ensureNullSenderRecords(
+  token: string,
+  zoneId: string,
+  rdomain: string,
+): Promise<string[]> {
+  const CF_API = `https://api.cloudflare.com/client/v4/zones/${zoneId}`;
+  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const actions: string[] = [];
+
+  // --- SPF on reports subdomain ---
+  const spfExpected = 'v=spf1 -all';
+  const spfRes = await fetch(`${CF_API}/dns_records?type=TXT&name=${encodeURIComponent(rdomain)}&per_page=50`, { headers });
+  const spfData = await spfRes.json() as CfResult<{ id: string; content: string }[]>;
+  const spfRecords = spfData.result ?? [];
+  const spfMatch = spfRecords.find(r => {
+    const clean = r.content.replace(/^"|"$/g, '');
+    return clean.startsWith('v=spf1');
+  });
+
+  if (spfMatch) {
+    const clean = spfMatch.content.replace(/^"|"$/g, '');
+    if (clean === spfExpected) {
+      actions.push(`SPF ${rdomain}: exists`);
+    } else {
+      console.warn(`[setup] null-sender conflict: SPF on ${rdomain} is "${clean}", expected "${spfExpected}"`);
+      actions.push(`SPF ${rdomain}: conflict (found "${clean}")`);
+    }
+  } else {
+    await fetch(`${CF_API}/dns_records`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ type: 'TXT', name: rdomain, content: `"${spfExpected}"`, ttl: 3600 }),
+    });
+    actions.push(`SPF ${rdomain}: created`);
+  }
+
+  // --- DMARC on reports subdomain ---
+  const dmarcExpected = 'v=DMARC1; p=reject;';
+  const dmarcName = `_dmarc.${rdomain}`;
+  const dmarcRes = await fetch(`${CF_API}/dns_records?type=TXT&name=${encodeURIComponent(dmarcName)}&per_page=50`, { headers });
+  const dmarcData = await dmarcRes.json() as CfResult<{ id: string; content: string }[]>;
+  const dmarcRecords = dmarcData.result ?? [];
+  const dmarcMatch = dmarcRecords.find(r => {
+    const clean = r.content.replace(/^"|"$/g, '');
+    return clean.startsWith('v=DMARC1');
+  });
+
+  if (dmarcMatch) {
+    const clean = dmarcMatch.content.replace(/^"|"$/g, '');
+    if (clean === dmarcExpected) {
+      actions.push(`DMARC ${dmarcName}: exists`);
+    } else {
+      console.warn(`[setup] null-sender conflict: DMARC on ${dmarcName} is "${clean}", expected "${dmarcExpected}"`);
+      actions.push(`DMARC ${dmarcName}: conflict (found "${clean}")`);
+    }
+  } else {
+    await fetch(`${CF_API}/dns_records`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ type: 'TXT', name: dmarcName, content: `"${dmarcExpected}"`, ttl: 3600 }),
+    });
+    actions.push(`DMARC ${dmarcName}: created`);
+  }
+
+  return actions;
+}

@@ -168,6 +168,10 @@ export interface OnboardingStatus {
     has_our_rua: boolean;
     current_record: string | null;
     rua_address: string;
+    auth_record?: {
+      found: boolean;
+      record_name: string | null;
+    };
   };
   spf: {
     record: string | null;
