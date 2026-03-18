@@ -1,6 +1,6 @@
 {
   "name": "inbox-angel-worker",
-  "image": "mcr.microsoft.com/devcontainers/base:bullseye",
+  "build": { "context": ".", "dockerfile": "Dockerfile" },
   "workspaceFolder": "/workspaces/inbox-angel-worker",
   "remoteUser": "vscode",
   "features": {
@@ -11,7 +11,7 @@
   "containerEnv": {
     "NODE_ENV": "development"
   },
-  "postCreateCommand": "npm install && npm install -g wrangler @anthropic-ai/claude-code && echo 'Ready!'",
+  "postCreateCommand": "npm install && npm install -g wrangler @anthropic-ai/claude-code && npx playwright install chromium && echo 'Ready!'",
   "forwardPorts": [8787, 5173],
   "portsAttributes": {
     "8787": { "label": "Wrangler dev", "onAutoForward": "ignore" },
