@@ -11,7 +11,7 @@
   "containerEnv": {
     "NODE_ENV": "development"
   },
-  "postCreateCommand": "npm install && npm install -g wrangler @anthropic-ai/claude-code && npx playwright install chromium && echo 'Ready!'",
+  "postCreateCommand": "npm install && npm install -g wrangler @anthropic-ai/claude-code && cd /tmp && npm install playwright && sudo env PATH=$PATH npx playwright install-deps chromium && npx playwright install chromium && echo 'Ready!'",
   "forwardPorts": [8787, 5173],
   "portsAttributes": {
     "8787": { "label": "Wrangler dev", "onAutoForward": "ignore" },
