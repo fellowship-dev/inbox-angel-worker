@@ -115,14 +115,17 @@ export function Explore({ domainId, onUnauthorized }: Props) {
                 <div key={`${src.source_ip}-${src.header_from}`} style={{ ...s.card, opacity: stale ? 0.5 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
                     <a href={`#/domains/${domainId}/reports/${src.last_seen}`} style={{ textDecoration: 'none' }}>
-                      <code style={s.ip}>{src.source_ip}</code>
+                      {(src.org || src.base_domain)
+                        ? <span style={s.providerName}>{src.org ?? src.base_domain}</span>
+                        : <code style={s.ip}>{src.source_ip}</code>
+                      }
                     </a>
                     {passing
                       ? <span style={s.passBadge}>✓ Passing</span>
                       : <span style={s.failBadge}>{failLabel(src)} fail</span>
                     }
                   </div>
-                  {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
+                  {(src.org || src.base_domain) && <code style={s.ipSub}>{src.source_ip}</code>}
                   {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                   {via && <div style={s.sub}>via {via}</div>}
                   <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', fontSize: '0.75rem', color: '#9ca3af' }}>
@@ -155,9 +158,12 @@ export function Explore({ domainId, onUnauthorized }: Props) {
                   <tr key={`${src.source_ip}-${src.header_from}`} style={{ opacity: stale ? 0.5 : 1 }}>
                     <td style={s.td}>
                       <a href={`#/domains/${domainId}/reports/${src.last_seen}`} style={s.ipLink}>
-                        <code style={s.ip}>{src.source_ip}</code>
+                        {(src.org || src.base_domain)
+                          ? <span style={s.providerName}>{src.org ?? src.base_domain}</span>
+                          : <code style={s.ip}>{src.source_ip}</code>
+                        }
                       </a>
-                      {(src.org || src.base_domain) && <div style={s.sub}>{src.org ?? src.base_domain}</div>}
+                      {(src.org || src.base_domain) && <code style={s.ipSub}>{src.source_ip}</code>}
                       {src.header_from && <div style={s.sub}>{src.header_from}</div>}
                       {via && <div style={s.sub}>via {via}</div>}
                     </td>
@@ -201,6 +207,8 @@ const s = {
   card: { padding: '0.75rem', border: '1px solid #f3f4f6', borderRadius: '6px', background: '#fff' } as const,
   // Shared
   ip: { fontFamily: 'monospace', fontSize: '0.8rem', color: '#111827' } as const,
+  providerName: { fontSize: '0.875rem', fontWeight: 600, color: '#111827' } as const,
+  ipSub: { display: 'block', fontFamily: 'monospace', fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' } as const,
   sub: { fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.15rem' } as const,
   passBadge: { display: 'inline-block', background: '#dcfce7', color: '#16a34a', fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px' } as const,
   failBadge: { display: 'inline-block', background: '#fee2e2', color: '#dc2626', fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px' } as const,
