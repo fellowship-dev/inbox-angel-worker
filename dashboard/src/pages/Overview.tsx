@@ -38,11 +38,11 @@ function ScoreCircle({ score }: { score: number | null }) {
   const offset = score === null ? circumference : circumference * (1 - score / 100);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth="3" />
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth="2" />
       {score !== null && (
         <circle
           cx={cx} cy={cx} r={r} fill="none"
-          stroke={color} strokeWidth="3"
+          stroke={color} strokeWidth="2"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
@@ -52,7 +52,7 @@ function ScoreCircle({ score }: { score: number | null }) {
       <text
         x={cx} y={cx}
         dominantBaseline="central" textAnchor="middle"
-        fontSize="9" fontWeight="700" fill={color}
+        fontSize="8" fontWeight="700" fill={color}
       >
         {score !== null ? score : '—'}
       </text>
