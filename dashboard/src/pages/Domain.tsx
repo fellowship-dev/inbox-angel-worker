@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, disableSpfFlatten, getMtaStsStatus, disableMtaSts, getWizardState } from '../api';
+import { getDomains, getDomainStats, getDomainSources, checkDomainDns, getSpfFlattenStatus, disableSpfFlatten, getMtaStsStatus, disableMtaSts, getWizardState } from '../api';
 import type { Domain, DomainStats, FailingSource, SpfFlatStatus, MtaStsStatus, WizardState } from '../types';
 import { useIsMobile } from '../hooks';
 
@@ -103,9 +103,6 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const [copied, setCopied] = useState(false);
   const [dnsOk, setDnsOk] = useState<boolean | null>(null);
   const [currentRecord, setCurrentRecord] = useState<string | null>(null);
-  const [cfManaged, setCfManaged] = useState(false);
-  const [dmarcBusy, setDmarcBusy] = useState(false);
-  const [dmarcError, setDmarcError] = useState<string | null>(null);
   const [spfFlat, setSpfFlat] = useState<SpfFlatStatus | null>(null);
   const [spfFlatBusy, setSpfFlatBusy] = useState(false);
   const [spfFlatError, setSpfFlatError] = useState<string | null>(null);
@@ -367,43 +364,12 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         <p style={s.guidanceBody}>{guidance.body}</p>
         {guidance.action && guidance.action.targetPolicy && (
           <div style={s.guidanceAction}>
-            <span style={s.guidanceActionLabel}>{guidance.action.label}</span>
-            {currentRecord && currentRecord !== guidance.action.dns && (
-              <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem' }}>
-                <div style={{ color: '#6b7280', marginBottom: '0.2rem' }}>Current:</div>
-                <code style={{ ...s.dnsCode, opacity: 0.6, textDecoration: 'line-through' }}>{currentRecord}</code>
-              </div>
-            )}
-            <div style={{ ...s.dnsRow, flexWrap: 'wrap' }}>
-              <code style={s.dnsCode}>{guidance.action.dns}</code>
-              <button style={s.copyBtn} onClick={() => copy(guidance.action!.dns)}>
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              {cfManaged && guidance.action.targetPolicy && (
-                <button
-                  style={{ ...s.copyBtn, background: guidance.color, color: '#fff', borderColor: guidance.color, opacity: dmarcBusy ? 0.6 : 1 }}
-                  disabled={dmarcBusy}
-                  onClick={async () => {
-                    setDmarcBusy(true);
-                    setDmarcError(null);
-                    try {
-                      await updateDmarcPolicy(id, guidance.action!.targetPolicy);
-                      const { domains } = await getDomains();
-                      const updated = domains.find(d => d.id === id);
-                      if (updated) setDomain(updated);
-                      setCurrentRecord(guidance.action!.dns);
-                    } catch (e: any) {
-                      setDmarcError(e.message ?? 'Failed to update DMARC policy');
-                    } finally {
-                      setDmarcBusy(false);
-                    }
-                  }}
-                >
-                  {dmarcBusy ? 'Applying…' : 'Apply via Cloudflare'}
-                </button>
-              )}
-            </div>
-            {dmarcError && <p style={{ color: '#dc2626', fontSize: '0.8rem', marginTop: '0.25rem' }}>{dmarcError}</p>}
+            <a
+              href={`#/domains/${id}/dmarc-wizard`}
+              style={s.upgradeBtn}
+            >
+              Upgrade to {guidance.action.targetPolicy} →
+            </a>
           </div>
         )}
         {total === 0 && dnsOk !== null && (
@@ -563,6 +529,7 @@ const s = {
   guidanceBody: { margin: '0 0 0.75rem', color: '#374151', fontSize: '0.9rem', lineHeight: 1.6 } as const,
   guidanceAction: { display: 'flex', flexDirection: 'column' as const, gap: '0.4rem' },
   guidanceActionLabel: { fontSize: '0.8rem', color: '#6b7280' } as const,
+  upgradeBtn: { display: 'inline-block', padding: '0.4rem 1rem', background: '#111827', color: '#fff', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none', alignSelf: 'flex-start' as const } as const,
   dnsRow: { display: 'flex', alignItems: 'center', gap: '0.5rem' } as const,
   dnsCode: { flex: 1, minWidth: 0, padding: '0.4rem 0.6rem', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px', fontSize: '0.8rem', fontFamily: 'monospace', overflowX: 'auto' as const, whiteSpace: 'nowrap' as const },
   copyBtn: { padding: '0.35rem 0.75rem', background: '#111827', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' as const },
