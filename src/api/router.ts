@@ -29,6 +29,8 @@
 //   GET    /api/domains/:id/anomalies         — failing sources with Active/Older split
 //   GET    /api/domains/:id/export            — CSV export
 //   GET    /api/domains/:id/dns-check         — check _dmarc TXT record in DNS
+//   GET    /api/domains/:id/rollout-next      — current pct= step, next step, DNS preview, safety
+//   POST   /api/domains/:id/rollout-advance   — persist recommended rollout step
 //   GET    /api/audit-log                     — immutable audit log (admin only)
 //   GET    /api/domains/:id/spf-flatten       — SPF flatten config + availability
 //   POST   /api/domains/:id/spf-flatten       — enable SPF flattening (triggers initial flatten)
@@ -95,6 +97,7 @@ import {
   deleteMtaStsConfig,
   getTlsReportSummary,
   getAuditLog,
+  updateDomainRollout,
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
 import { deprovisionDomain, provisionDomain } from '../dns/provision';
@@ -103,6 +106,7 @@ import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
 import { logAudit } from '../audit/log';
 import { flattenSpf, restoreSpf, collectIps, buildFlatRecord } from '../email/spf-flattener';
+import { getNextStep, getCurrentStepIndex, buildStepRecord, PASS_RATE_THRESHOLD, ROLLOUT_SEQUENCE } from '../dmarc/rollout';
 import { lookupSpf, countSpfLookupsFromRecord } from '../email/dns-check';
 import { getAllDkimSelectors } from '../../dashboard/src/email-service-providers';
 import {
@@ -1353,6 +1357,113 @@ async function _handleApi(
 
       await setSetting(env.DB, `wizard_state_${id}`, JSON.stringify(current));
       return json(current);
+    }
+
+    // GET /api/domains/:id/rollout-next — current pct= step, next step, DNS preview, safety checks
+    const rolloutNextMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-next$/);
+    if (rolloutNextMatch && method === 'GET') {
+      const id = parseInt(rolloutNextMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      // Fetch live DMARC record to get current pct=
+      let currentRecord: string | null = null;
+      let livePct: number | null = null;
+      let livePolicy: string | null = null;
+      try {
+        const dohRes = await fetch(
+          `https://cloudflare-dns.com/dns-query?name=_dmarc.${domain.domain}&type=TXT`,
+          { headers: { Accept: 'application/dns-json' } }
+        );
+        const doh = await dohRes.json() as { Answer?: { data: string }[] };
+        currentRecord = doh.Answer?.[0]?.data?.replace(/^"|"$/g, '') ?? null;
+        if (currentRecord) {
+          const pMatch = currentRecord.match(/\bp=(\w+)/);
+          const pctMatch = currentRecord.match(/\bpct=(\d+)/);
+          livePolicy = pMatch?.[1] ?? null;
+          livePct = pctMatch ? parseInt(pctMatch[1], 10) : 100;
+        }
+      } catch {
+        // DNS unavailable — proceed without live data
+      }
+
+      // Pass rate from last 30 days
+      const since30d = Math.floor(Date.now() / 1000) - 30 * 86400;
+      const statsResult = await getDomainStats(env.DB, id, since30d);
+      const rows = statsResult.results ?? [];
+      const totalMsgs = rows.reduce((n, r) => n + (r.total ?? 0), 0);
+      const passedMsgs = rows.reduce((n, r) => n + (r.passed ?? 0), 0);
+      const passRate = totalMsgs > 0 ? Math.round((passedMsgs / totalMsgs) * 100) : null;
+
+      // Unknown senders check: sources with no aligned domain in last 7 days
+      const since7d = Math.floor(Date.now() / 1000) - 7 * 86400;
+      const sourcesResult = await getTopFailingSources(env.DB, id, since7d);
+      const unknownSenders = (sourcesResult.results ?? []).filter(
+        (s: any) => !s.spf_domain && !s.dkim_domain
+      ).length;
+
+      const nextStep = getNextStep(livePolicy, livePct);
+      const currentStepIndex = getCurrentStepIndex(livePolicy, livePct);
+
+      // Safety: block if pass rate is below threshold
+      const blocked = passRate !== null && passRate < PASS_RATE_THRESHOLD;
+      const blockReason = blocked
+        ? `Pass rate is ${passRate}% — must be ≥${PASS_RATE_THRESHOLD}% to advance`
+        : null;
+
+      // Safety: warn if unknown senders present
+      const hasUnknownSenders = unknownSenders > 0;
+
+      const dnsPreview = nextStep && currentRecord
+        ? buildStepRecord(currentRecord, nextStep)
+        : null;
+
+      // Behind schedule: recommended step is ahead of live step
+      const recStepIndex = domain.rollout_rec_policy && domain.rollout_rec_pct != null
+        ? ROLLOUT_SEQUENCE.findIndex(
+            (s) => s.policy === domain.rollout_rec_policy && s.pct === domain.rollout_rec_pct
+          )
+        : -1;
+      const behindSchedule = recStepIndex > currentStepIndex;
+
+      return json({
+        current_policy: livePolicy,
+        current_pct: livePct,
+        current_record: currentRecord,
+        current_step_index: currentStepIndex,
+        total_steps: ROLLOUT_SEQUENCE.length,
+        next_step: nextStep,
+        dns_preview: dnsPreview,
+        pass_rate: passRate,
+        blocked,
+        block_reason: blockReason,
+        has_unknown_senders: hasUnknownSenders,
+        behind_schedule: behindSchedule,
+        recommended_policy: domain.rollout_rec_policy,
+        recommended_pct: domain.rollout_rec_pct,
+      });
+    }
+
+    // POST /api/domains/:id/rollout-advance — persist recommended rollout step to DB
+    const rolloutAdvanceMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-advance$/);
+    if (rolloutAdvanceMatch && method === 'POST') {
+      const id = parseInt(rolloutAdvanceMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      const body = await parseBody<{ policy: string; pct: number }>(request);
+      const { policy, pct } = body;
+      if (!policy || !['quarantine', 'reject'].includes(policy)) {
+        return err('policy must be quarantine or reject', 400);
+      }
+      if (typeof pct !== 'number' || ![10, 50, 100].includes(pct)) {
+        return err('pct must be 10, 50, or 100', 400);
+      }
+
+      await updateDomainRollout(env.DB, id, policy, pct);
+      return json({ ok: true, rollout_rec_policy: policy, rollout_rec_pct: pct });
     }
 
     // DELETE /api/domains/:id
