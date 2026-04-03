@@ -77,10 +77,16 @@ export function Overview({ onUnauthorized }: Props) {
     if (pdfLoading || rows.length === 0) return;
     setPdfLoading(true);
     try {
-      const summaries = await Promise.all(
-        rows.map((r) => getDomainCheckSummary(r.domain.id))
-      );
-      downloadPdfReport({ summaries });
+      const [summaries, trendResults] = await Promise.all([
+        Promise.all(rows.map((r) => getDomainCheckSummary(r.domain.id))),
+        Promise.all(rows.map((r) => getDomainStats(r.domain.id, 90).catch(() => null))),
+      ]);
+      const trends: Record<number, import('../types').DailyStat[]> = {};
+      rows.forEach((r, i) => {
+        const statsData = trendResults[i];
+        if (statsData) trends[r.domain.id] = statsData.stats;
+      });
+      downloadPdfReport({ summaries, trends });
     } catch (e: any) {
       if (e.message === '401') { onUnauthorized(); return; }
       alert(`Failed to export PDF: ${e.message ?? 'Unknown error'}`);
