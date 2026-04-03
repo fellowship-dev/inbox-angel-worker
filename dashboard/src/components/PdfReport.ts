@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import type { DomainCheckSummary, DailyStat } from '../types';
+import { getAllRecommendations, type Recommendation } from '../utils/pdfRecommendations';
 
 // ── Colours & layout constants ────────────────────────────────
 
@@ -161,6 +162,51 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
     doc.text(mtaLabel, x + 1, y + 5.5);
 
     y += 8;
+  }
+
+  // ── Recommendations section ────────────────────────────────
+  const recs = getAllRecommendations(summaries);
+  if (recs.length > 0) {
+    y = addPageIfNeeded(doc, y, 20);
+    y += 8;
+
+    doc.setTextColor(...DARK_COLOR);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Recommendations', MARGIN, y);
+    y += 6;
+
+    const SEVERITY_COLOR: Record<Recommendation['severity'], [number, number, number]> = {
+      critical: FAIL_COLOR,
+      warning:  WARN_COLOR,
+      info:     [59, 130, 246], // blue-500
+    };
+
+    for (const rec of recs) {
+      y = addPageIfNeeded(doc, y, 14);
+
+      const color = SEVERITY_COLOR[rec.severity];
+      // Severity badge
+      doc.setFillColor(...color);
+      doc.roundedRect(MARGIN, y, 18, 5, 1, 1, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text(rec.severity.toUpperCase(), MARGIN + 1.5, y + 3.5);
+
+      // Domain label
+      doc.setTextColor(...MUTED_COLOR);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.text(rec.domain, MARGIN + 20, y + 3.5);
+
+      // Message (wrap to fit page width)
+      doc.setTextColor(...DARK_COLOR);
+      doc.setFontSize(8.5);
+      const lines = doc.splitTextToSize(rec.message, COL_W - 4) as string[];
+      doc.text(lines, MARGIN + 2, y + 9);
+      y += 8 + lines.length * 4.5;
+    }
   }
 
   return doc;
