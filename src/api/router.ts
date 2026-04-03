@@ -840,6 +840,29 @@ async function _handleApi(
       }, 201);
     }
 
+    // GET /api/zones — list CF account zones for zone picker (requires CLOUDFLARE_API_TOKEN)
+    if (path === '/api/zones' && method === 'GET') {
+      if (!env.CLOUDFLARE_API_TOKEN) return err('Cloudflare API token not configured', 400);
+      try {
+        const res = await fetch('https://api.cloudflare.com/client/v4/zones?per_page=200&status=active', {
+          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+        });
+        const data = await res.json() as {
+          success: boolean;
+          result?: { id: string; name: string; status: string }[];
+          errors?: { message: string }[];
+        };
+        if (!data.success) {
+          const msg = data.errors?.map(e => e.message).join(', ') ?? 'CF API error';
+          return err(msg, 502);
+        }
+        const zones = (data.result ?? []).map(z => ({ id: z.id, name: z.name, status: z.status }));
+        return json({ zones });
+      } catch {
+        return err('Failed to fetch zones from Cloudflare', 502);
+      }
+    }
+
     // GET /api/domains
     if (path === '/api/domains' && method === 'GET') {
       return await getDomainsHandler(env);
