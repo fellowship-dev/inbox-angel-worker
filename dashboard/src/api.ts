@@ -327,3 +327,35 @@ export async function updateWizardState(domainId: number, updates: Partial<impor
   if (!res.ok) await throwApiError(res);
   return res.json();
 }
+
+export interface RolloutNext {
+  current_policy: string | null;
+  current_pct: number | null;
+  current_record: string | null;
+  current_step_index: number;
+  total_steps: number;
+  next_step: { policy: string; pct: number } | null;
+  dns_preview: string | null;
+  pass_rate: number | null;
+  blocked: boolean;
+  block_reason: string | null;
+  has_unknown_senders: boolean;
+  behind_schedule: boolean;
+  recommended_policy: string | null;
+  recommended_pct: number | null;
+}
+
+export async function getRolloutNext(domainId: number): Promise<RolloutNext> {
+  const res = await apiFetch(`/api/domains/${domainId}/rollout-next`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function advanceRollout(domainId: number, policy: string, pct: number): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/domains/${domainId}/rollout-advance`, {
+    method: 'POST',
+    body: JSON.stringify({ policy, pct }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
