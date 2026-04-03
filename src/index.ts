@@ -1,7 +1,7 @@
 import { handleEmail } from './email/handler';
 import { handleApi } from './api/router';
-import { getActiveSubscriptions, updateSubscriptionBaseline, getAllEnabledSpfFlattenConfigs, updateSpfFlattenResult, updateSpfFlattenError, getDomainById, getAllDomains, updateDomainSpfLookupCount, getAllEnabledMtaStsConfigs, getMtaStsConfigByDomain, updateMtaStsMxHosts, updateMtaStsError, getHeartbeatStats } from './db/queries';
-import { checkSubscription } from './monitor/check';
+import { getActiveSubscriptions, updateSubscriptionBaseline, getAllEnabledSpfFlattenConfigs, updateSpfFlattenResult, updateSpfFlattenError, getDomainById, getAllDomains, updateDomainSpfLookupCount, getAllEnabledMtaStsConfigs, getMtaStsConfigByDomain, updateMtaStsMxHosts, updateMtaStsError, getHeartbeatStats, getDomainStats } from './db/queries';
+import { checkSubscription, detectRollbackRisk } from './monitor/check';
 import { sendChangeNotification } from './monitor/notify';
 import { sendWeeklyDigests } from './digest/weekly';
 import { ensureMigrated } from './db/migrate';
@@ -129,6 +129,32 @@ export default {
           }
         })
         .catch(e => console.warn(`[monitor] SPF lookup refresh failed for ${d.domain}:`, e));
+    }
+
+    // Rollback regression check — for domains actively in a pct= rollout
+    for (const d of allDomains) {
+      if (!d.rollout_rec_policy || d.rollout_rec_pct == null) continue;
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const [curr, prev] = await Promise.all([
+          getDomainStats(env.DB!, d.id, now - 7 * 86400),
+          getDomainStats(env.DB!, d.id, now - 14 * 86400),
+        ]);
+        const currRows = curr.results ?? [];
+        const prevRows = prev.results?.filter(r => r.day < new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)) ?? [];
+        const rate = (rows: typeof currRows) => {
+          const t = rows.reduce((n, r) => n + r.total, 0);
+          const p = rows.reduce((n, r) => n + r.passed, 0);
+          return t > 0 ? Math.round((p / t) * 100) : null;
+        };
+        const currRate = rate(currRows);
+        const prevRate = rate(prevRows);
+        if (detectRollbackRisk(currRate, prevRate)) {
+          console.warn(`[rollout] ${d.domain}: pass rate dropped from ${prevRate}% to ${currRate}% after step ${d.rollout_rec_policy}/${d.rollout_rec_pct}% — rollback recommended`);
+        }
+      } catch (e) {
+        console.error(`[rollout] regression check failed for ${d.domain}:`, e);
+      }
     }
 
     // MTA-STS MX refresh — update policy_id in DNS if MX hosts changed
