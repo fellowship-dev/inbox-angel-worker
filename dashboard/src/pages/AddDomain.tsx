@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { addDomain, checkDomainDns } from '../api';
+import { addDomain, checkDomainDns, fetchZones } from '../api';
+import type { CfZone } from '../api';
 import type { AddDomainResult } from '../types';
 
 interface Props {
@@ -31,11 +32,16 @@ type DnsStatus = 'checking' | 'found' | 'missing-rua' | 'not-found' | 'error';
 export function AddDomain({ onUnauthorized }: Props) {
   const [step, setStep] = useState<Step>('input');
   const [input, setInput] = useState('');
+  const [zones, setZones] = useState<CfZone[] | null>(null);
   const [result, setResult] = useState<AddDomainResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dnsStatus, setDnsStatus] = useState<DnsStatus>('checking');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    fetchZones().then(r => setZones(r.zones)).catch(() => setZones([]));
+  }, []);
 
   useEffect(() => {
     if (step !== 'setup' || !result) return;
@@ -87,15 +93,41 @@ export function AddDomain({ onUnauthorized }: Props) {
         </div>
         <form onSubmit={submit} style={s.form}>
           <label style={s.label} htmlFor="domain-input">Your domain</label>
-          <input
-            id="domain-input"
-            type="text"
-            placeholder="yourcompany.com"
-            value={input}
-            onInput={(e) => setInput((e.target as HTMLInputElement).value)}
-            style={s.input}
-            autoFocus
-          />
+          {zones && zones.length > 0 ? (
+            <>
+              <select
+                id="domain-input"
+                value={input}
+                onChange={e => setInput((e.target as HTMLSelectElement).value)}
+                style={{ ...s.input, cursor: 'pointer', background: 'white' }}
+              >
+                <option value="">— Select a domain from your Cloudflare account —</option>
+                {zones.map(z => (
+                  <option key={z.id} value={z.name}>{z.name}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>
+                Not listed?{' '}
+                <button
+                  type="button"
+                  onClick={() => setZones([])}
+                  style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                >
+                  Enter manually
+                </button>
+              </p>
+            </>
+          ) : (
+            <input
+              id="domain-input"
+              type="text"
+              placeholder="yourcompany.com"
+              value={input}
+              onInput={(e) => setInput((e.target as HTMLInputElement).value)}
+              style={s.input}
+              autoFocus
+            />
+          )}
           {error && <p style={s.error}>{error}</p>}
           <button type="submit" style={s.primaryBtn} disabled={loading}>
             {loading ? 'Setting up…' : 'Continue →'}
