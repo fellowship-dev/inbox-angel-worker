@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, deleteDomain, getMonitorSubs, setMonitorSubActive, setDomainAlerts } from '../api';
+import { getDomains, deleteDomain, getMonitorSubs, setMonitorSubActive, setDomainAlerts, setDefaultDomain } from '../api';
 import type { MonitorSub } from '../api';
 import type { Domain } from '../types';
 
@@ -42,6 +42,8 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [togglingAlerts, setTogglingAlerts] = useState(false);
+  const [settingDefault, setSettingDefault] = useState(false);
+  const [defaultWarning, setDefaultWarning] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +94,21 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
       if (e.message === '401') { onUnauthorized(); return; }
       setDeleteError(e.message ?? 'Delete failed');
       setDeleting(false);
+    }
+  };
+
+  const handleSetDefault = async () => {
+    setSettingDefault(true);
+    setDefaultWarning(null);
+    try {
+      const res = await setDefaultDomain(id);
+      setDomain(prev => prev ? { ...prev, is_default: 1 } : prev);
+      setDefaultWarning(res.warning);
+    } catch (e: any) {
+      if (e.message === '401') { onUnauthorized(); return; }
+      setDefaultWarning(e.message ?? 'Failed to set as default');
+    } finally {
+      setSettingDefault(false);
     }
   };
 
@@ -192,6 +209,39 @@ export function DomainSettings({ id, onUnauthorized }: Props) {
             ))}
           </div>
         )}
+      </section>
+
+      {/* Default domain */}
+      <section style={s.section}>
+        <h3 style={s.sectionTitle}>Infrastructure</h3>
+        <div style={s.card}>
+          <div style={s.infoRow}>
+            <div style={{ flex: 1 }}>
+              <div style={s.infoText}>
+                {domain.is_default ? '⭐ This is the default domain' : 'Set as default domain'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.15rem' }}>
+                {domain.is_default
+                  ? `reports.${domain.domain} receives reports for all your domains`
+                  : 'Use this domain as the reports infrastructure hub for all other domains'}
+              </div>
+            </div>
+            {!domain.is_default && (
+              <button
+                style={{ ...s.copyBtn, background: '#111827', opacity: settingDefault ? 0.5 : 1 }}
+                onClick={handleSetDefault}
+                disabled={settingDefault}
+              >
+                {settingDefault ? 'Setting…' : 'Set as default'}
+              </button>
+            )}
+          </div>
+          {defaultWarning && (
+            <div style={{ padding: '0.75rem 1rem', background: '#fef9c3', borderTop: '1px solid #fde68a', fontSize: '0.8rem', color: '#92400e', lineHeight: 1.5 }}>
+              ⚠️ {defaultWarning}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Danger zone */}

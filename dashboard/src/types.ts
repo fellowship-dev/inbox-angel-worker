@@ -5,6 +5,7 @@ export interface Domain {
   rua_address: string;
   created_at: number; // unix timestamp
   alerts_enabled: number; // 1 = on, 0 = off
+  is_default: number; // 1 = this domain is the reports infrastructure hub
 }
 
 export interface DailyStat {
