@@ -4,6 +4,7 @@
 
 import { DomainChange } from './check';
 import { reportsDomain, fromEmail } from '../env-utils';
+import { buildDnsAlertHtml } from '../email/html-templates';
 
 export interface NotifyEnv {
   SEND_EMAIL?: SendEmail;
@@ -57,6 +58,7 @@ export async function sendChangeNotification(
 
   const rd = reportsDomain()!;
   const body = buildEmailBody(domain, changes, rd);
+  const html = buildDnsAlertHtml({ domain, changes, reportsDomain: rd });
 
   if (!env.SEND_EMAIL) {
     console.log(`[notify] SEND_EMAIL binding not configured — would send to ${email}: ${subject}\n${body}`);
@@ -69,6 +71,7 @@ export async function sendChangeNotification(
       to: [email],
       subject,
       text: body,
+      html,
     });
   } catch (e) {
     console.error(`[notify] send failed for ${email}:`, e);
