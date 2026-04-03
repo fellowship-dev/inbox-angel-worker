@@ -803,7 +803,8 @@ async function _handleApi(
         await persistConfig(env.DB!, { zone_id: zoneId, account_id: accountId });
       }
 
-      // Create the domain row if it doesn't exist yet
+      // Create the domain row if it doesn't exist yet, then mark it as default.
+      // This is the first domain configured — it becomes the infrastructure hub.
       const existing = await getAllDomains(env.DB!);
       const alreadyHas = existing.results.some(d => d.domain === domain);
       let domainId: number | undefined;
@@ -819,6 +820,14 @@ async function _handleApi(
         }, ctx);
       } else {
         domainId = existing.results.find(d => d.domain === domain)?.id;
+      }
+
+      // Atomically designate this domain as the default (clears any existing default first)
+      if (domainId) {
+        await env.DB!.batch([
+          env.DB!.prepare('UPDATE domains SET is_default = 0'),
+          env.DB!.prepare('UPDATE domains SET is_default = 1 WHERE id = ?').bind(domainId),
+        ]);
       }
 
       return json({
