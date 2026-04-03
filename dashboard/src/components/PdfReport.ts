@@ -209,6 +209,67 @@ export function buildPdfReport(data: PdfReportData): jsPDF {
     }
   }
 
+  // ── Trend section ──────────────────────────────────────────
+  const trends = data.trends;
+  if (trends && Object.keys(trends).length > 0) {
+    y = addPageIfNeeded(doc, y, 20);
+    y += 8;
+
+    doc.setTextColor(...DARK_COLOR);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Weekly DMARC Pass Rate Trend', MARGIN, y);
+    y += 6;
+
+    for (const d of summaries) {
+      const stats = trends[d.domain_id];
+      if (!stats || stats.length === 0) continue;
+
+      // Aggregate into weeks (ISO week buckets by 7 days)
+      const weeks: { label: string; total: number; passed: number }[] = [];
+      const sorted = [...stats].sort((a, b) => a.day.localeCompare(b.day));
+      let bucket: { label: string; total: number; passed: number } | null = null;
+      for (const s of sorted) {
+        // New bucket every 7 days
+        if (!bucket || weeks.length === 0 || s.day > (bucket.label.split('→')[1]?.trim() ?? '')) {
+          const weekEnd = new Date(s.day);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          const label = `${s.day} → ${weekEnd.toISOString().slice(0, 10)}`;
+          bucket = { label, total: 0, passed: 0 };
+          weeks.push(bucket);
+        }
+        bucket.total += s.total;
+        bucket.passed += s.passed;
+      }
+
+      if (weeks.length === 0) continue;
+
+      y = addPageIfNeeded(doc, y, 8 + weeks.length * 6);
+
+      // Domain header
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...DARK_COLOR);
+      doc.text(d.domain, MARGIN, y);
+      y += 5;
+
+      // Week rows
+      for (const w of weeks) {
+        const rate = w.total > 0 ? Math.round((w.passed / w.total) * 100) : null;
+        const color: [number, number, number] = rate === null ? MUTED_COLOR : rate >= 95 ? PASS_COLOR : rate >= 70 ? WARN_COLOR : FAIL_COLOR;
+
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...MUTED_COLOR);
+        doc.text(w.label, MARGIN + 2, y);
+        doc.setTextColor(...color);
+        doc.text(rate !== null ? `${rate}% (${w.passed.toLocaleString()}/${w.total.toLocaleString()})` : 'No data', MARGIN + 80, y);
+        y += 5;
+      }
+      y += 3;
+    }
+  }
+
   return doc;
 }
 
