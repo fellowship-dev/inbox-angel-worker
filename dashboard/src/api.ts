@@ -327,3 +327,21 @@ export async function updateWizardState(domainId: number, updates: Partial<impor
   if (!res.ok) await throwApiError(res);
   return res.json();
 }
+
+export interface CfZone {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export async function fetchZones(): Promise<{ zones: CfZone[] }> {
+  const res = await apiFetch('/api/zones');
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function setDefaultDomain(domainId: number): Promise<{ ok: boolean; domain: string; warning: string }> {
+  const res = await apiFetch(`/api/domains/${domainId}/set-default`, { method: 'PUT' });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
