@@ -16,6 +16,8 @@ import { ResetPassword } from './pages/ResetPassword';
 import { Onboarding } from './pages/Onboarding';
 import { SpfFlattenWizard } from './pages/SpfFlattenWizard';
 import { MtaStsWizard } from './pages/MtaStsWizard';
+import { BulkImport } from './pages/BulkImport';
+import { CTDiscover } from './pages/CTDiscover';
 import { AuthGate } from './AuthGate';
 import { getVersion, logout, type VersionInfo } from './api';
 
@@ -185,6 +187,8 @@ export function App() {
         )}
         {route === '/' && <Overview onUnauthorized={handleUnauth} />}
         {route === '/add' && <AddDomain onUnauthorized={handleUnauth} />}
+        {route === '/bulk-import' && <BulkImport onUnauthorized={handleUnauth} />}
+        {route === '/ct-discover' && <CTDiscover onUnauthorized={handleUnauth} />}
         {route === '/check' && <EmailCheck />}
         {route === '/team'  && <Team onUnauthorized={handleUnauth} />}
         {route === '/audit' && <AuditLog onUnauthorized={handleUnauth} />}
@@ -207,7 +211,7 @@ export function App() {
           const m = route.match(/^\/domains\/(\d+)\/reports\/(\d{4}-\d{2}-\d{2})$/);
           return m ? <ReportDetail domainId={parseInt(m[1], 10)} date={m[2]} onUnauthorized={handleUnauth} /> : null;
         })()}
-        {route !== '/' && route !== '/add' && route !== '/check' && route !== '/team' && route !== '/audit' &&
+        {route !== '/' && route !== '/add' && route !== '/bulk-import' && route !== '/ct-discover' && route !== '/check' && route !== '/team' && route !== '/audit' &&
          !/^\/domains\/\d+$/.test(route) &&
          !/^\/domains\/\d+\/settings$/.test(route) &&
          !/^\/domains\/\d+\/explore$/.test(route) &&
