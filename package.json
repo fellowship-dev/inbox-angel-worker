@@ -19,7 +19,7 @@
 		"unseed:remote": "wrangler d1 execute inbox-angel --remote --file=scripts/unseed-demo.sql"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.12.4",
+		"@cloudflare/vitest-pool-workers": "^0.14.1",
 		"@cloudflare/workers-types": "^4.20260403.1",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
