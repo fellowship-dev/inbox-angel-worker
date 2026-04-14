@@ -2,16 +2,11 @@ import { useEffect, useState } from 'preact/hooks';
 import { getDomains, deleteDomain, getMonitorSubs, setMonitorSubActive, setDomainAlerts } from '../api';
 import type { MonitorSub } from '../api';
 import type { Domain } from '../types';
+import { formatDate } from '../utils/dates';
 
 interface Props {
   id: number;
   onUnauthorized: () => void;
-}
-
-function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  });
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
