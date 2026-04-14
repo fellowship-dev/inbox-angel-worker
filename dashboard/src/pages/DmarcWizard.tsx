@@ -49,6 +49,7 @@ export function DmarcWizard({ domainId, onUnauthorized }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
   const [copied, copy] = useCopyClipboard();
 
   useEffect(() => {
@@ -62,6 +63,10 @@ export function DmarcWizard({ domainId, onUnauthorized }: Props) {
         if (cancelled) return;
         const d = domains.find(d => d.id === domainId) ?? null;
         setDomain(d);
+        if (d) {
+          const p = (d.dmarc_policy ?? "none") as Policy;
+          setStep(p === "reject" ? 2 : (POLICY_STEPS[p] ?? 0));
+        }
         setCurrentRecord(dns.current_record);
         setCfManaged(dns.cf_managed);
       } catch (e: any) {
@@ -81,11 +86,6 @@ export function DmarcWizard({ domainId, onUnauthorized }: Props) {
   if (!domain) return <div style={ws.wrap}><p style={{ color: '#9ca3af' }}>Domain not found.</p></div>;
 
   const policy = (domain.dmarc_policy ?? 'none') as Policy;
-  const policyStep = POLICY_STEPS[policy] ?? 0;
-
-  // Step = which upgrade step we're showing (0 = none→quarantine, 1 = quarantine→reject, 2 = done)
-  const initialStep = policy === 'reject' ? 2 : policyStep;
-  const [step, setStep] = useState(initialStep);
 
   const isFullyEnforced = policy === 'reject' || step === 2;
   const stepData = STEP_COPY[step];
