@@ -41,6 +41,19 @@ function spfSeverity(was: string, now: string): DomainChange['severity'] {
   return 'changed';
 }
 
+// Rollback regression detection — called from daily cron for domains in active rollout.
+// Returns true if the current week pass rate dropped more than ROLLBACK_THRESHOLD_PP
+// compared to the previous week, indicating a possible regression after a pct= step change.
+export const ROLLBACK_THRESHOLD_PP = 10;
+
+export function detectRollbackRisk(
+  currentPassRate: number | null,  // 0-100 or null (no data)
+  prevPassRate: number | null,     // 0-100 or null (no data)
+): boolean {
+  if (currentPassRate === null || prevPassRate === null) return false;
+  return prevPassRate - currentPassRate >= ROLLBACK_THRESHOLD_PP;
+}
+
 export async function checkSubscription(sub: MonitorSubscription): Promise<CheckMonitorResult> {
   const [spf, dmarc] = await Promise.all([
     lookupSpf(sub.domain),
