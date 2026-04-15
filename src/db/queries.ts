@@ -44,6 +44,11 @@ export function updateDomainDmarcPolicy(db: D1Database, domainId: number, policy
     .bind(policy, domainId).run();
 }
 
+export function updateDomainRollout(db: D1Database, domainId: number, policy: string, pct: number) {
+  return db.prepare(`UPDATE domains SET rollout_rec_policy = ?, rollout_rec_pct = ?, updated_at = unixepoch() WHERE id = ?`)
+    .bind(policy, pct, domainId).run();
+}
+
 // ── Check Results ────────────────────────────────────────────
 
 export function insertCheckResult(db: D1Database, r: Omit<CheckResult, 'id' | 'created_at'>) {
@@ -346,6 +351,53 @@ export function getDomainExportData(db: D1Database, domainId: number) {
     WHERE ar.domain_id = ?
     ORDER BY ar.date_begin DESC, rr.count DESC
   `).bind(domainId).all<ExportRow>();
+}
+
+// ── Check Summary (PDF report) ───────────────────────────────
+
+export interface DomainCheckSummary {
+  domain_id: number;
+  domain: string;
+  dmarc_policy: string | null;
+  spf_record: string | null;
+  // DMARC aggregate pass/fail (last 30 days)
+  total_messages: number;
+  pass_messages: number;
+  fail_messages: number;
+  // DKIM pass rate derived from report_records (last 30 days)
+  dkim_total: number;
+  dkim_pass: number;
+  // SPF pass rate derived from report_records (last 30 days)
+  spf_total: number;
+  spf_pass: number;
+  // MTA-STS
+  mta_sts_enabled: number; // 0 or 1
+  mta_sts_mode: string | null;
+}
+
+export function getCheckSummary(db: D1Database, domainId: number, since: number) {
+  return db.prepare(`
+    SELECT
+      d.id            AS domain_id,
+      d.domain,
+      d.dmarc_policy,
+      d.spf_record,
+      COALESCE(SUM(ar.total_count), 0) AS total_messages,
+      COALESCE(SUM(ar.pass_count),  0) AS pass_messages,
+      COALESCE(SUM(ar.fail_count),  0) AS fail_messages,
+      COALESCE(SUM(rr.count), 0)       AS dkim_total,
+      COALESCE(SUM(CASE WHEN rr.dkim_result = 'pass' THEN rr.count ELSE 0 END), 0) AS dkim_pass,
+      COALESCE(SUM(rr.count), 0)       AS spf_total,
+      COALESCE(SUM(CASE WHEN rr.spf_result  = 'pass' THEN rr.count ELSE 0 END), 0) AS spf_pass,
+      COALESCE(m.enabled, 0)           AS mta_sts_enabled,
+      m.mode                           AS mta_sts_mode
+    FROM domains d
+    LEFT JOIN aggregate_reports ar ON ar.domain_id = d.id AND ar.date_begin >= ?
+    LEFT JOIN report_records rr    ON rr.report_id = ar.id
+    LEFT JOIN mta_sts_config m     ON m.domain_id = d.id
+    WHERE d.id = ?
+    GROUP BY d.id, d.domain, d.dmarc_policy, d.spf_record, m.enabled, m.mode
+  `).bind(since, domainId).first<DomainCheckSummary>();
 }
 
 // ── Settings ─────────────────────────────────────────────────

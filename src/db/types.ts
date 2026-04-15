@@ -18,6 +18,8 @@ export interface Domain {
   dns_record_id: string | null;  // Cloudflare DNS record ID for deprovision
   spf_lookup_count: number | null; // cached SPF lookup depth (updated on add + daily cron)
   parent_id: number | null;      // non-null for subdomains; references domains.id
+  rollout_rec_policy: string | null; // recommended rollout policy: quarantine | reject
+  rollout_rec_pct: number | null;    // recommended rollout pct: 10 | 50 | 100
   created_at: number;
   updated_at: number;
 }

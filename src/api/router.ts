@@ -29,6 +29,10 @@
 //   GET    /api/domains/:id/anomalies         — failing sources with Active/Older split
 //   GET    /api/domains/:id/export            — CSV export
 //   GET    /api/domains/:id/dns-check         — check _dmarc TXT record in DNS
+//   GET    /api/domains/:id/rollout-next      — current pct= step, next step, DNS preview, safety
+//   POST   /api/domains/:id/rollout-advance   — persist recommended rollout step
+//   PUT    /api/domains/:id/set-default       — designate domain as default (infrastructure hub)
+//   GET    /api/zones                         — list CF account zones (for zone picker)
 //   GET    /api/audit-log                     — immutable audit log (admin only)
 //   GET    /api/domains/:id/spf-flatten       — SPF flatten config + availability
 //   POST   /api/domains/:id/spf-flatten       — enable SPF flattening (triggers initial flatten)
@@ -63,6 +67,7 @@ import {
   getReportSourcesByDate,
   getDayReportSummary,
   getDomainExportData,
+  getCheckSummary,
   getAnomalySources,
   getAllSources,
   getSetting,
@@ -95,14 +100,18 @@ import {
   deleteMtaStsConfig,
   getTlsReportSummary,
   getAuditLog,
+  updateDomainRollout,
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
 import { deprovisionDomain, provisionDomain } from '../dns/provision';
+import { parseDomainList, bulkInsertDomains } from '../domains/bulk';
+import { fetchSubdomains } from '../domains/ct';
 import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
 import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
 import { logAudit } from '../audit/log';
 import { flattenSpf, restoreSpf, collectIps, buildFlatRecord } from '../email/spf-flattener';
+import { getNextStep, getCurrentStepIndex, buildStepRecord, PASS_RATE_THRESHOLD, ROLLOUT_SEQUENCE } from '../dmarc/rollout';
 import { lookupSpf, lookupDmarc, countSpfLookupsFromRecord } from '../email/dns-check';
 import { getAllDkimSelectors } from '../../dashboard/src/email-service-providers';
 import {
@@ -381,6 +390,20 @@ async function exportDomainData(env: Env, domainId: string): Promise<Response> {
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
+}
+
+async function getDomainCheckSummary(env: Env, domainId: string): Promise<Response> {
+  const id = parseInt(domainId, 10);
+  if (isNaN(id)) return err('invalid domain id', 400);
+
+  const domain = await getDomainById(env.DB, id);
+  if (!domain) return err('domain not found', 404);
+
+  const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+  const summary = await getCheckSummary(env.DB, id, since);
+  if (!summary) return err('check summary not found', 404);
+
+  return json(summary);
 }
 
 async function getDomainReportByDate(env: Env, domainId: string, url: URL): Promise<Response> {
@@ -818,7 +841,8 @@ async function _handleApi(
         await persistConfig(env.DB!, { zone_id: zoneId, account_id: accountId });
       }
 
-      // Create the domain row if it doesn't exist yet
+      // Create the domain row if it doesn't exist yet, then mark it as default.
+      // This is the first domain configured — it becomes the infrastructure hub.
       const existing = await getAllDomains(env.DB!);
       const alreadyHas = existing.results.some(d => d.domain === domain);
       let domainId: number | undefined;
@@ -836,6 +860,14 @@ async function _handleApi(
         domainId = existing.results.find(d => d.domain === domain)?.id;
       }
 
+      // Atomically designate this domain as the default (clears any existing default first)
+      if (domainId) {
+        await env.DB!.batch([
+          env.DB!.prepare('UPDATE domains SET is_default = 0'),
+          env.DB!.prepare('UPDATE domains SET is_default = 1 WHERE id = ?').bind(domainId),
+        ]);
+      }
+
       return json({
         ok: true,
         domain,
@@ -844,6 +876,29 @@ async function _handleApi(
         zone_id: zoneId ?? null,
         account_id: accountId ?? null,
       }, 201);
+    }
+
+    // GET /api/zones — list CF account zones for zone picker (requires CLOUDFLARE_API_TOKEN)
+    if (path === '/api/zones' && method === 'GET') {
+      if (!env.CLOUDFLARE_API_TOKEN) return err('Cloudflare API token not configured', 400);
+      try {
+        const res = await fetch('https://api.cloudflare.com/client/v4/zones?per_page=200&status=active', {
+          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+        });
+        const data = await res.json() as {
+          success: boolean;
+          result?: { id: string; name: string; status: string }[];
+          errors?: { message: string }[];
+        };
+        if (!data.success) {
+          const msg = data.errors?.map(e => e.message).join(', ') ?? 'CF API error';
+          return err(msg, 502);
+        }
+        const zones = (data.result ?? []).map(z => ({ id: z.id, name: z.name, status: z.status }));
+        return json({ zones });
+      } catch {
+        return err('Failed to fetch zones from Cloudflare', 502);
+      }
     }
 
     // GET /api/domains
@@ -900,6 +955,11 @@ async function _handleApi(
     const exportMatch = path.match(/^\/api\/domains\/([^/]+)\/export$/);
     if (exportMatch && method === 'GET') {
       return await exportDomainData(env, exportMatch[1]);
+    }
+    // GET /api/domains/:id/check-summary — DMARC/SPF/DKIM/MTA-STS summary for PDF report
+    const checkSummaryMatch = path.match(/^\/api\/domains\/([^/]+)\/check-summary$/);
+    if (checkSummaryMatch && method === 'GET') {
+      return await getDomainCheckSummary(env, checkSummaryMatch[1]);
     }
     // GET /api/domains/:id/dns-check — check if user has added the _dmarc TXT record
     const dnsCheckMatch = path.match(/^\/api\/domains\/([^/]+)\/dns-check$/);
@@ -1372,6 +1432,146 @@ async function _handleApi(
       return json(current);
     }
 
+    // PUT /api/domains/:id/set-default — designate this domain as the default (infrastructure hub).
+    // Atomically clears is_default on all rows then sets it on the target.
+    // Resets env caches so REPORTS_DOMAIN/FROM_EMAIL re-derive immediately.
+    // Does NOT re-provision DNS — caller must re-apply DMARC on other domains if needed.
+    const setDefaultMatch = path.match(/^\/api\/domains\/([^/]+)\/set-default$/);
+    if (setDefaultMatch && method === 'PUT') {
+      const id = parseInt(setDefaultMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      await env.DB!.batch([
+        env.DB!.prepare('UPDATE domains SET is_default = 0'),
+        env.DB!.prepare('UPDATE domains SET is_default = 1 WHERE id = ?').bind(id),
+      ]);
+
+      // Reset caches so next request re-derives REPORTS_DOMAIN and FROM_EMAIL from new default
+      resetEnvCache();
+
+      logAudit(env.DB!, {
+        actor_id: userBySession?.id ?? null, actor_email: userBySession?.email ?? null, actor_type: 'user',
+        action: 'domain.set_default',
+        resource_type: 'domain', resource_id: String(id), resource_name: domain.domain,
+        after_value: { is_default: true },
+      }, ctx);
+
+      return json({
+        ok: true,
+        domain: domain.domain,
+        warning: 'Auth records for other domains now point to the old reports subdomain. Re-apply DMARC on each domain to update them.',
+      });
+    }
+
+    // GET /api/domains/:id/rollout-next — current pct= step, next step, DNS preview, safety checks
+    const rolloutNextMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-next$/);
+    if (rolloutNextMatch && method === 'GET') {
+      const id = parseInt(rolloutNextMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      // Fetch live DMARC record to get current pct=
+      let currentRecord: string | null = null;
+      let livePct: number | null = null;
+      let livePolicy: string | null = null;
+      try {
+        const dohRes = await fetch(
+          `https://cloudflare-dns.com/dns-query?name=_dmarc.${domain.domain}&type=TXT`,
+          { headers: { Accept: 'application/dns-json' } }
+        );
+        const doh = await dohRes.json() as { Answer?: { data: string }[] };
+        currentRecord = doh.Answer?.[0]?.data?.replace(/^"|"$/g, '') ?? null;
+        if (currentRecord) {
+          const pMatch = currentRecord.match(/\bp=(\w+)/);
+          const pctMatch = currentRecord.match(/\bpct=(\d+)/);
+          livePolicy = pMatch?.[1] ?? null;
+          livePct = pctMatch ? parseInt(pctMatch[1], 10) : 100;
+        }
+      } catch {
+        // DNS unavailable — proceed without live data
+      }
+
+      // Pass rate from last 30 days
+      const since30d = Math.floor(Date.now() / 1000) - 30 * 86400;
+      const statsResult = await getDomainStats(env.DB, id, since30d);
+      const rows = statsResult.results ?? [];
+      const totalMsgs = rows.reduce((n, r) => n + (r.total ?? 0), 0);
+      const passedMsgs = rows.reduce((n, r) => n + (r.passed ?? 0), 0);
+      const passRate = totalMsgs > 0 ? Math.round((passedMsgs / totalMsgs) * 100) : null;
+
+      // Unknown senders check: sources with no aligned domain in last 7 days
+      const since7d = Math.floor(Date.now() / 1000) - 7 * 86400;
+      const sourcesResult = await getTopFailingSources(env.DB, id, since7d);
+      const unknownSenders = (sourcesResult.results ?? []).filter(
+        (s: any) => !s.spf_domain && !s.dkim_domain
+      ).length;
+
+      const nextStep = getNextStep(livePolicy, livePct);
+      const currentStepIndex = getCurrentStepIndex(livePolicy, livePct);
+
+      // Safety: block if pass rate is below threshold
+      const blocked = passRate !== null && passRate < PASS_RATE_THRESHOLD;
+      const blockReason = blocked
+        ? `Pass rate is ${passRate}% — must be ≥${PASS_RATE_THRESHOLD}% to advance`
+        : null;
+
+      // Safety: warn if unknown senders present
+      const hasUnknownSenders = unknownSenders > 0;
+
+      const dnsPreview = nextStep && currentRecord
+        ? buildStepRecord(currentRecord, nextStep)
+        : null;
+
+      // Behind schedule: recommended step is ahead of live step
+      const recStepIndex = domain.rollout_rec_policy && domain.rollout_rec_pct != null
+        ? ROLLOUT_SEQUENCE.findIndex(
+            (s) => s.policy === domain.rollout_rec_policy && s.pct === domain.rollout_rec_pct
+          )
+        : -1;
+      const behindSchedule = recStepIndex > currentStepIndex;
+
+      return json({
+        current_policy: livePolicy,
+        current_pct: livePct,
+        current_record: currentRecord,
+        current_step_index: currentStepIndex,
+        total_steps: ROLLOUT_SEQUENCE.length,
+        next_step: nextStep,
+        dns_preview: dnsPreview,
+        pass_rate: passRate,
+        blocked,
+        block_reason: blockReason,
+        has_unknown_senders: hasUnknownSenders,
+        behind_schedule: behindSchedule,
+        recommended_policy: domain.rollout_rec_policy,
+        recommended_pct: domain.rollout_rec_pct,
+      });
+    }
+
+    // POST /api/domains/:id/rollout-advance — persist recommended rollout step to DB
+    const rolloutAdvanceMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-advance$/);
+    if (rolloutAdvanceMatch && method === 'POST') {
+      const id = parseInt(rolloutAdvanceMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      const body = await parseBody<{ policy: string; pct: number }>(request);
+      const { policy, pct } = body;
+      if (!policy || !['quarantine', 'reject'].includes(policy)) {
+        return err('policy must be quarantine or reject', 400);
+      }
+      if (typeof pct !== 'number' || ![10, 50, 100].includes(pct)) {
+        return err('pct must be 10, 50, or 100', 400);
+      }
+
+      await updateDomainRollout(env.DB, id, policy, pct);
+      return json({ ok: true, rollout_rec_policy: policy, rollout_rec_pct: pct });
+    }
+
     // DELETE /api/domains/:id
     const domainDeleteMatch = path.match(/^\/api\/domains\/([^/]+)$/);
     if (domainDeleteMatch && method === 'DELETE') {
@@ -1761,6 +1961,39 @@ async function _handleApi(
         until:     url.searchParams.get('until')  ? parseInt(url.searchParams.get('until')!, 10)  : undefined,
       });
       return json({ entries: results, page, limit });
+    }
+
+    // POST /api/domains/bulk-import — admin-only fast path: insert + provision N domains at once
+    if (path === '/api/domains/bulk-import' && method === 'POST') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const body = await parseBody<{ domains?: string }>(request);
+      if (!body.domains || typeof body.domains !== 'string') return err('domains (string) is required', 400);
+      const list = parseDomainList(body.domains);
+      if (list.length === 0) return err('no valid domains provided', 400);
+      if (list.length > 50) return err('too many domains: limit is 50 per request', 400);
+      const results = await bulkInsertDomains(
+        { DB: env.DB, CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN },
+        list,
+        { actorId: actor.id, actorEmail: actor.email, ctx },
+      );
+      const imported = results.filter(r => r.status === 'imported').length;
+      return json({ imported, total: results.length, results }, imported > 0 ? 201 : 200);
+    }
+
+    // GET /api/domains/ct-discover?domain= — admin-only: enumerate subdomains via crt.sh
+    if (path === '/api/domains/ct-discover' && method === 'GET') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const rootDomain = url.searchParams.get('domain')?.toLowerCase().trim();
+      if (!rootDomain) return err('domain query param is required', 400);
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(rootDomain)) return err('invalid domain format', 400);
+      try {
+        const subdomains = await fetchSubdomains(rootDomain);
+        return json({ domain: rootDomain, subdomains });
+      } catch (e: any) {
+        return err(e.message ?? 'CT log lookup failed', 502);
+      }
     }
 
     return err('not found', 404);

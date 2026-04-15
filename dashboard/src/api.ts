@@ -36,6 +36,12 @@ export async function getDomains(): Promise<{ domains: import('./types').Domain[
   return res.json();
 }
 
+export async function getDomainCheckSummary(id: number): Promise<import('./types').DomainCheckSummary> {
+  const res = await apiFetch(`/api/domains/${id}/check-summary`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function getDomainStats(id: number, days = 7): Promise<import('./types').DomainStats> {
   const res = await apiFetch(`/api/domains/${id}/stats?days=${days}`);
   if (!res.ok) await throwApiError(res);
@@ -324,6 +330,85 @@ export async function getWizardState(domainId: number): Promise<import('./types'
 
 export async function updateWizardState(domainId: number, updates: Partial<import('./types').WizardState>): Promise<import('./types').WizardState> {
   const res = await apiFetch(`/api/domains/${domainId}/wizard-state`, { method: 'PUT', body: JSON.stringify(updates) });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export interface CfZone {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export async function fetchZones(): Promise<{ zones: CfZone[] }> {
+  const res = await apiFetch('/api/zones');
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export interface RolloutNext {
+  current_policy: string | null;
+  current_pct: number | null;
+  current_record: string | null;
+  current_step_index: number;
+  total_steps: number;
+  next_step: { policy: string; pct: number } | null;
+  dns_preview: string | null;
+  pass_rate: number | null;
+  blocked: boolean;
+  block_reason: string | null;
+  has_unknown_senders: boolean;
+  behind_schedule: boolean;
+  recommended_policy: string | null;
+  recommended_pct: number | null;
+}
+
+export async function getRolloutNext(domainId: number): Promise<RolloutNext> {
+  const res = await apiFetch(`/api/domains/${domainId}/rollout-next`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function advanceRollout(domainId: number, policy: string, pct: number): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/domains/${domainId}/rollout-advance`, {
+    method: 'POST',
+    body: JSON.stringify({ policy, pct }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export interface BulkImportItemResult {
+  domain: string;
+  status: 'imported' | 'duplicate' | 'invalid' | 'error';
+  error?: string;
+  dns_record_id?: string | null;
+  manual_dns?: boolean;
+}
+
+export interface BulkImportResponse {
+  imported: number;
+  total: number;
+  results: BulkImportItemResult[];
+}
+
+export async function bulkImport(domains: string): Promise<BulkImportResponse> {
+  const res = await apiFetch('/api/domains/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify({ domains }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function ctDiscover(domain: string): Promise<{ domain: string; subdomains: string[] }> {
+  const res = await apiFetch(`/api/domains/ct-discover?domain=${encodeURIComponent(domain)}`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function setDefaultDomain(domainId: number): Promise<{ ok: boolean; domain: string; warning: string }> {
+  const res = await apiFetch(`/api/domains/${domainId}/set-default`, { method: 'PUT' });
   if (!res.ok) await throwApiError(res);
   return res.json();
 }

@@ -141,8 +141,19 @@ export async function enrichEnv(env: Env, db?: D1Database): Promise<void> {
     if (!_reportsDomainCache) _reportsDomainCache = settings.get('reports_domain');
     if (!_fromEmailCache) _fromEmailCache = settings.get('from_email');
     if (!_workersSubdomainCache) _workersSubdomainCache = settings.get('workers_subdomain');
+
     if (!_brandLogoUrlCache) _brandLogoUrlCache = settings.get('brand_logo_url');
     if (!_brandColorCache) _brandColorCache = settings.get('brand_color');
+
+    // Fallback: derive base domain from domains.is_default=1 if not in settings.
+    // This supports the multi-domain model where base_domain migrates out of settings.
+    if (!_baseDomainCache) {
+      const defaultDomain = await effectiveDb
+        .prepare('SELECT domain FROM domains WHERE is_default = 1 LIMIT 1')
+        .first<{ domain: string }>();
+      if (defaultDomain) _baseDomainCache = defaultDomain.domain;
+    }
+
     _enrichedOnce = true;
   }
 
