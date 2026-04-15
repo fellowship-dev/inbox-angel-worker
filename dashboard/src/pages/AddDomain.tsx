@@ -31,22 +31,27 @@ type DnsStatus = 'checking' | 'found' | 'missing-rua' | 'not-found' | 'error';
 
 function SubdomainInheritanceBanner({ pc, subdomain }: { pc: ParentContext; subdomain: string }) {
   let dmarcMsg: { icon: string; text: string; bg: string; color: string };
+  // RFC 7489 §6.3: when sp= is absent, the p= policy applies to subdomains.
+  // So effective subdomain policy = explicit sp= if present, otherwise p=.
+  const effectiveSp = pc.dmarc_sp ?? pc.dmarc_policy;
   if (!pc.has_dmarc) {
     dmarcMsg = {
       icon: '⚠️',
       text: `No DMARC record found on ${pc.domain}. Consider setting up ${pc.domain} first, then return here.`,
       bg: '#fef9c3', color: '#92400e',
     };
-  } else if (pc.dmarc_sp === 'reject') {
+  } else if (effectiveSp === 'reject') {
+    const via = pc.dmarc_sp === 'reject' ? 'sp=reject' : `p=reject (sp= not set, inherits p=)`;
     dmarcMsg = {
       icon: '✓',
-      text: `${pc.domain} enforces sp=reject — this subdomain is already protected by the parent's policy. We still recommend adding an explicit _dmarc.${subdomain} record for independent control.`,
+      text: `${pc.domain} enforces ${via} — this subdomain is already protected by the parent's policy. We still recommend adding an explicit _dmarc.${subdomain} record for independent control.`,
       bg: '#dcfce7', color: '#15803d',
     };
   } else {
+    const spDesc = pc.dmarc_sp !== null ? `sp=${pc.dmarc_sp}` : `no sp= tag (inherits p=${pc.dmarc_policy ?? 'none'})`;
     dmarcMsg = {
       icon: '⚠️',
-      text: `${pc.domain} does not enforce a subdomain policy (effective sp=${pc.dmarc_sp ?? 'none'}). This subdomain can be spoofed. Add the DMARC record below to protect it independently.`,
+      text: `${pc.domain} does not enforce a subdomain reject policy (${spDesc}). This subdomain can be spoofed. Add the DMARC record below to protect it independently.`,
       bg: '#fef9c3', color: '#92400e',
     };
   }
