@@ -98,6 +98,8 @@ import {
 } from '../db/queries';
 import { hashPassword, verifyPassword } from './password';
 import { deprovisionDomain, provisionDomain } from '../dns/provision';
+import { parseDomainList, bulkInsertDomains } from '../domains/bulk';
+import { fetchSubdomains } from '../domains/ct';
 import { ensureEmailRouting, registerEmailRoutingDestination } from '../setup/email-routing';
 import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
@@ -1744,6 +1746,39 @@ async function _handleApi(
         until:     url.searchParams.get('until')  ? parseInt(url.searchParams.get('until')!, 10)  : undefined,
       });
       return json({ entries: results, page, limit });
+    }
+
+    // POST /api/domains/bulk-import — admin-only fast path: insert + provision N domains at once
+    if (path === '/api/domains/bulk-import' && method === 'POST') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const body = await parseBody<{ domains?: string }>(request);
+      if (!body.domains || typeof body.domains !== 'string') return err('domains (string) is required', 400);
+      const list = parseDomainList(body.domains);
+      if (list.length === 0) return err('no valid domains provided', 400);
+      if (list.length > 50) return err('too many domains: limit is 50 per request', 400);
+      const results = await bulkInsertDomains(
+        { DB: env.DB, CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN },
+        list,
+        { actorId: actor.id, actorEmail: actor.email, ctx },
+      );
+      const imported = results.filter(r => r.status === 'imported').length;
+      return json({ imported, total: results.length, results }, imported > 0 ? 201 : 200);
+    }
+
+    // GET /api/domains/ct-discover?domain= — admin-only: enumerate subdomains via crt.sh
+    if (path === '/api/domains/ct-discover' && method === 'GET') {
+      const actor = await getUserBySession(env.DB, requestKey);
+      if (!actor || actor.role !== 'admin') return err('admin required', 403);
+      const rootDomain = url.searchParams.get('domain')?.toLowerCase().trim();
+      if (!rootDomain) return err('domain query param is required', 400);
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(rootDomain)) return err('invalid domain format', 400);
+      try {
+        const subdomains = await fetchSubdomains(rootDomain);
+        return json({ domain: rootDomain, subdomains });
+      } catch (e: any) {
+        return err(e.message ?? 'CT log lookup failed', 502);
+      }
     }
 
     return err('not found', 404);

@@ -327,3 +327,32 @@ export async function updateWizardState(domainId: number, updates: Partial<impor
   if (!res.ok) await throwApiError(res);
   return res.json();
 }
+
+export interface BulkImportItemResult {
+  domain: string;
+  status: 'imported' | 'duplicate' | 'invalid' | 'error';
+  error?: string;
+  dns_record_id?: string | null;
+  manual_dns?: boolean;
+}
+
+export interface BulkImportResponse {
+  imported: number;
+  total: number;
+  results: BulkImportItemResult[];
+}
+
+export async function bulkImport(domains: string): Promise<BulkImportResponse> {
+  const res = await apiFetch('/api/domains/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify({ domains }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function ctDiscover(domain: string): Promise<{ domain: string; subdomains: string[] }> {
+  const res = await apiFetch(`/api/domains/ct-discover?domain=${encodeURIComponent(domain)}`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
