@@ -7,6 +7,7 @@ import { Env } from '../index';
 import { extractAuthResults } from './parse-headers';
 import { checkDomain } from './dns-check';
 import { buildSummary, formatCheckReport } from './report-formatter';
+import { buildFreeCheckHtml } from './html-templates';
 import { insertCheckResult } from '../db/queries';
 import { fromEmail as derivedFromEmail } from '../env-utils';
 
@@ -15,16 +16,28 @@ function extractDomain(email: string): string {
   return at >= 0 ? email.slice(at + 1).toLowerCase() : email.toLowerCase();
 }
 
-function buildMimeReply(from: string, to: string, subject: string, body: string): ReadableStream {
+function buildMimeReply(from: string, to: string, subject: string, text: string, html: string): ReadableStream {
+  const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const mimeContent = [
     'MIME-Version: 1.0',
     `From: ${from}`,
     `To: ${to}`,
     `Subject: ${subject}`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: 7bit',
     '',
-    body,
+    text,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    html,
+    '',
+    `--${boundary}--`,
   ].join('\r\n');
 
   const bytes = new TextEncoder().encode(mimeContent);
@@ -56,13 +69,14 @@ export async function handleFreeCheck(
   // 4. Build structured summary and format plain-English report
   const summary = buildSummary(domain, auth, dns);
   const reportText = formatCheckReport(fromEmail, summary, auth, dns);
+  const reportHtml = buildFreeCheckHtml({ fromEmail, summary, auth, dns });
 
   // 5. Send reply
   const resolvedFrom = derivedFromEmail();
   if (!resolvedFrom) throw new Error('FROM_EMAIL not configured — complete the setup wizard first');
   const replyFrom = `InboxAngel <${resolvedFrom}>`;
   const subject = `Email security check — ${domain}`;
-  await message.reply(buildMimeReply(replyFrom, fromEmail, subject, reportText));
+  await message.reply(buildMimeReply(replyFrom, fromEmail, subject, reportText, reportHtml));
 
   // 6. Store result in D1 (best-effort — don't let DB failure break the email flow)
   try {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getAuditLog } from '../api';
 import type { AuditLogEntry } from '../types';
+import { formatTimestamp, relativeTime } from '../utils/dates';
 
 const ACTION_COLOR: Record<string, string> = {
   'auth.':        '#6366f1',
@@ -24,12 +25,6 @@ function actionBg(action: string): string {
   return color + '18';
 }
 
-function formatTs(ts: number): string {
-  return new Date(ts * 1000).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
-}
 
 function JsonExpand({ label, value }: { label: string; value: string | null }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +85,9 @@ function EntryRow({ entry }: { entry: AuditLogEntry }) {
           </span>
           {/* Timestamp */}
           <span style={{ fontSize: '0.72rem', color: '#9ca3af', whiteSpace: 'nowrap' }}>
-            {formatTs(entry.created_at)}
+            {formatTimestamp(entry.created_at)}
+            <span style={{ color: '#d1d5db', margin: '0 0.3rem' }}>·</span>
+            {relativeTime(entry.created_at)}
           </span>
         </div>
       </div>
