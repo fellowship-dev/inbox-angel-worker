@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats, getWizardState } from '../api';
+import { getDomains, getDomainStats, getWizardState, getDomainCheckSummary } from '../api';
 import type { Domain, DomainStats, WizardState } from '../types';
+import { downloadPdfReport } from '../components/PdfReport';
 import { useIsMobile } from '../hooks';
 
 type Status = 'good' | 'warning' | 'danger';
@@ -38,11 +39,11 @@ function ScoreCircle({ score }: { score: number | null }) {
   const offset = score === null ? circumference : circumference * (1 - score / 100);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth="3" />
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="#e5e7eb" strokeWidth="2" />
       {score !== null && (
         <circle
           cx={cx} cy={cx} r={r} fill="none"
-          stroke={color} strokeWidth="3"
+          stroke={color} strokeWidth="2"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
@@ -52,7 +53,7 @@ function ScoreCircle({ score }: { score: number | null }) {
       <text
         x={cx} y={cx}
         dominantBaseline="central" textAnchor="middle"
-        fontSize="9" fontWeight="700" fill={color}
+        fontSize="8" fontWeight="700" fill={color}
       >
         {score !== null ? score : '—'}
       </text>
@@ -69,7 +70,30 @@ export function Overview({ onUnauthorized }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const mobile = useIsMobile();
+
+  async function handleExportPdf() {
+    if (pdfLoading || rows.length === 0) return;
+    setPdfLoading(true);
+    try {
+      const [summaries, trendResults] = await Promise.all([
+        Promise.all(rows.map((r) => getDomainCheckSummary(r.domain.id))),
+        Promise.all(rows.map((r) => getDomainStats(r.domain.id, 90).catch(() => null))),
+      ]);
+      const trends: Record<number, import('../types').DailyStat[]> = {};
+      rows.forEach((r, i) => {
+        const statsData = trendResults[i];
+        if (statsData) trends[r.domain.id] = statsData.stats;
+      });
+      downloadPdfReport({ summaries, trends });
+    } catch (e: any) {
+      if (e.message === '401') { onUnauthorized(); return; }
+      alert(`Failed to export PDF: ${e.message ?? 'Unknown error'}`);
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +162,15 @@ export function Overview({ onUnauthorized }: Props) {
         <a href="#/add" style={{ ...styles.addBtn, marginLeft: mobile ? '0' : 'auto', marginTop: mobile ? '0.25rem' : '0' }}>
           + Add domain
         </a>
+        {rows.length > 0 && (
+          <button
+            onClick={handleExportPdf}
+            disabled={pdfLoading}
+            style={{ ...styles.addBtn, background: '#374151', marginLeft: '0', marginTop: mobile ? '0.25rem' : '0', border: 'none' }}
+          >
+            {pdfLoading ? 'Generating…' : '↓ Export PDF'}
+          </button>
+        )}
       </div>
 
       {loading && <p style={styles.muted}>Loading…</p>}

@@ -2,18 +2,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { getDomainReport } from '../api';
 import type { DayReport, ReportSource } from '../types';
 import { useIsMobile } from '../hooks';
+import { formatDateWithRelative } from '../utils/dates';
 
 interface Props {
   domainId: number;
   date: string;
   onUnauthorized: () => void;
-}
-
-function formatDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  });
 }
 
 function serviceVia(src: ReportSource): string | null {
@@ -45,7 +39,16 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
   const [report, setReport] = useState<DayReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const mobile = useIsMobile();
+
+  function toggleExpand(key: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +85,7 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
       <a href={`#/domains/${domainId}`} style={s.back}>← {domain}</a>
 
       <div style={s.pageHeader}>
-        <h2 style={s.title}>{formatDate(date)}</h2>
+        <h2 style={s.title}>{formatDateWithRelative(date)}</h2>
         <p style={{ ...s.hero, color: failing.length > 0 ? '#dc2626' : '#16a34a' }}>{hero}</p>
       </div>
 
@@ -107,8 +110,11 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
                 <div key={`${src.source_ip}-${src.header_from}`} style={s.failCard}>
                   <div style={{ ...s.cardTop, flexWrap: 'wrap' }}>
                     <div style={s.cardLeft}>
-                      <code style={s.ip}>{src.source_ip}</code>
-                      {(src.org || src.base_domain) && <span style={s.via}>{src.org ?? src.base_domain}</span>}
+                      {(src.org || src.base_domain)
+                        ? <span style={s.providerName}>{src.org ?? src.base_domain}</span>
+                        : <code style={s.ip}>{src.source_ip}</code>
+                      }
+                      {(src.org || src.base_domain) && <code style={s.ipSub}>{src.source_ip}</code>}
                       {via && <span style={s.via}>via {via}</span>}
                       {src.header_from && <span style={s.sendingAs}>sending as {src.header_from}</span>}
                     </div>
@@ -137,15 +143,41 @@ export function ReportDetail({ domainId, date, onUnauthorized }: Props) {
           <div style={s.passList}>
             {passing.map((src) => {
               const via = serviceVia(src);
+              const rowKey = `${src.source_ip}-${src.header_from}`;
+              const isExpanded = expanded.has(rowKey);
               return (
-                <div key={`${src.source_ip}-${src.header_from}`} style={s.passRow}>
-                  <span style={s.passCheck}>✓</span>
-                  <div style={{ ...s.passInfo, flexWrap: 'wrap' }}>
-                    <code style={s.ip}>{src.source_ip}</code>
-                    {(src.org || src.base_domain) && <span style={s.via}>{src.org ?? src.base_domain}</span>}
-                    {via && <span style={s.via}>via {via}</span>}
+                <div key={rowKey}>
+                  <div
+                    style={{ ...s.passRow, cursor: 'pointer' }}
+                    onClick={() => toggleExpand(rowKey)}
+                  >
+                    <span style={s.passCheck}>✓</span>
+                    <div style={{ ...s.passInfo, flexWrap: 'wrap' }}>
+                      {(src.org || src.base_domain)
+                        ? <span style={s.providerName}>{src.org ?? src.base_domain}</span>
+                        : <code style={s.ip}>{src.source_ip}</code>
+                      }
+                      {(src.org || src.base_domain) && <code style={s.ipSub}>{src.source_ip}</code>}
+                      {via && <span style={s.via}>via {via}</span>}
+                    </div>
+                    <span style={s.passCount}>{src.count.toLocaleString()} msg</span>
+                    <span style={s.expandToggle}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
-                  <span style={s.passCount}>{src.count.toLocaleString()} msg</span>
+                  {isExpanded && (
+                    <div style={s.expandPanel}>
+                      <div style={s.expandGrid}>
+                        <span style={s.expandLabel}>SPF</span>
+                        <span style={s.spfBadge(!!src.spf_pass)}>SPF {src.spf_pass ? '✓ pass' : '✗ fail'}</span>
+                        <span style={s.expandLabel}>DKIM</span>
+                        <span style={s.dkimBadge(!!src.dkim_pass)}>DKIM {src.dkim_pass ? '✓ pass' : '✗ fail'}</span>
+                        {src.spf_domain && <><span style={s.expandLabel}>SPF domain</span><code style={s.expandValue}>{src.spf_domain}</code></>}
+                        {src.dkim_domain && <><span style={s.expandLabel}>DKIM domain</span><code style={s.expandValue}>{src.dkim_domain}</code></>}
+                        {src.header_from && <><span style={s.expandLabel}>Sending as</span><code style={s.expandValue}>{src.header_from}</code></>}
+                        <span style={s.expandLabel}>Messages</span><span style={s.expandValue}>{src.count.toLocaleString()}</span>
+                        {src.reporters && <><span style={s.expandLabel}>Reported by</span><span style={s.expandValue}>{src.reporters}</span></>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -186,6 +218,8 @@ const s = {
   cardLeft: { display: 'flex', flexDirection: 'column' as const, gap: '0.2rem' },
   cardRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', flexShrink: 0 },
   ip: { fontFamily: 'monospace', fontSize: '0.875rem', color: '#111827' } as const,
+  providerName: { fontSize: '0.9rem', fontWeight: 600, color: '#111827' } as const,
+  ipSub: { fontFamily: 'monospace', fontSize: '0.75rem', color: '#9ca3af' } as const,
   via: { fontSize: '0.75rem', color: '#6b7280' } as const,
   sendingAs: { fontSize: '0.75rem', color: '#9ca3af' } as const,
   msgCount: { fontSize: '1.25rem', fontWeight: 700, color: '#111827', lineHeight: 1 } as const,
@@ -200,5 +234,10 @@ const s = {
   passCheck: { color: '#16a34a', fontWeight: 700, fontSize: '0.875rem', flexShrink: 0 } as const,
   passInfo: { display: 'flex', alignItems: 'baseline', gap: '0.5rem', flex: 1 } as const,
   passCount: { fontSize: '0.8rem', color: '#9ca3af', flexShrink: 0 } as const,
+  expandToggle: { fontSize: '0.6rem', color: '#d1d5db', flexShrink: 0, paddingLeft: '0.25rem' } as const,
+  expandPanel: { padding: '0.6rem 0.75rem 0.75rem 2.25rem', borderBottom: '1px solid #f3f4f6', background: '#f9fafb' } as const,
+  expandGrid: { display: 'grid', gridTemplateColumns: '7rem 1fr', gap: '0.3rem 0.5rem', fontSize: '0.78rem', alignItems: 'center' } as const,
+  expandLabel: { color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' as const, fontSize: '0.68rem', letterSpacing: '0.04em' } as const,
+  expandValue: { fontFamily: 'monospace', fontSize: '0.78rem', color: '#374151' } as const,
   muted: { color: '#9ca3af' } as const,
 };

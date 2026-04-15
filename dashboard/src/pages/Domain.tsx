@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, disableSpfFlatten, getMtaStsStatus, disableMtaSts, getWizardState } from '../api';
+import { getDomains, getDomainStats, getDomainSources, checkDomainDns, updateDmarcPolicy, getSpfFlattenStatus, disableSpfFlatten, getMtaStsStatus, disableMtaSts, getWizardState, getRolloutNext, advanceRollout } from '../api';
+import type { RolloutNext } from '../api';
 import type { Domain, DomainStats, FailingSource, SpfFlatStatus, MtaStsStatus, WizardState } from '../types';
 import { useIsMobile } from '../hooks';
 
@@ -103,9 +104,6 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const [copied, setCopied] = useState(false);
   const [dnsOk, setDnsOk] = useState<boolean | null>(null);
   const [currentRecord, setCurrentRecord] = useState<string | null>(null);
-  const [cfManaged, setCfManaged] = useState(false);
-  const [dmarcBusy, setDmarcBusy] = useState(false);
-  const [dmarcError, setDmarcError] = useState<string | null>(null);
   const [spfFlat, setSpfFlat] = useState<SpfFlatStatus | null>(null);
   const [spfFlatBusy, setSpfFlatBusy] = useState(false);
   const [spfFlatError, setSpfFlatError] = useState<string | null>(null);
@@ -113,6 +111,10 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const [mtaStsBusy, setMtaStsBusy] = useState(false);
   const [mtaStsError, setMtaStsError] = useState<string | null>(null);
   const [wizardState, setWizardState] = useState<WizardState | null>(null);
+  const [rollout, setRollout] = useState<RolloutNext | null>(null);
+  const [rolloutBusy, setRolloutBusy] = useState(false);
+  const [rolloutError, setRolloutError] = useState<string | null>(null);
+  const [showRolloutModal, setShowRolloutModal] = useState(false);
   const mobile = useIsMobile();
 
   // Initial load: domain info + failing sources (don't depend on chartDays)
@@ -144,6 +146,12 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
     load();
     return () => { cancelled = true; };
   }, [id]);
+
+  // Rollout state — fetch after initial load (stats must be loaded first)
+  useEffect(() => {
+    if (!stats) return;
+    getRolloutNext(id).then(setRollout).catch(() => {});
+  }, [id, stats]);
 
   // Chart stats — refetch when chartDays changes
   useEffect(() => {
@@ -367,43 +375,12 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         <p style={s.guidanceBody}>{guidance.body}</p>
         {guidance.action && guidance.action.targetPolicy && (
           <div style={s.guidanceAction}>
-            <span style={s.guidanceActionLabel}>{guidance.action.label}</span>
-            {currentRecord && currentRecord !== guidance.action.dns && (
-              <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem' }}>
-                <div style={{ color: '#6b7280', marginBottom: '0.2rem' }}>Current:</div>
-                <code style={{ ...s.dnsCode, opacity: 0.6, textDecoration: 'line-through' }}>{currentRecord}</code>
-              </div>
-            )}
-            <div style={{ ...s.dnsRow, flexWrap: 'wrap' }}>
-              <code style={s.dnsCode}>{guidance.action.dns}</code>
-              <button style={s.copyBtn} onClick={() => copy(guidance.action!.dns)}>
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              {cfManaged && guidance.action.targetPolicy && (
-                <button
-                  style={{ ...s.copyBtn, background: guidance.color, color: '#fff', borderColor: guidance.color, opacity: dmarcBusy ? 0.6 : 1 }}
-                  disabled={dmarcBusy}
-                  onClick={async () => {
-                    setDmarcBusy(true);
-                    setDmarcError(null);
-                    try {
-                      await updateDmarcPolicy(id, guidance.action!.targetPolicy);
-                      const { domains } = await getDomains();
-                      const updated = domains.find(d => d.id === id);
-                      if (updated) setDomain(updated);
-                      setCurrentRecord(guidance.action!.dns);
-                    } catch (e: any) {
-                      setDmarcError(e.message ?? 'Failed to update DMARC policy');
-                    } finally {
-                      setDmarcBusy(false);
-                    }
-                  }}
-                >
-                  {dmarcBusy ? 'Applying…' : 'Apply via Cloudflare'}
-                </button>
-              )}
-            </div>
-            {dmarcError && <p style={{ color: '#dc2626', fontSize: '0.8rem', marginTop: '0.25rem' }}>{dmarcError}</p>}
+            <a
+              href={`#/domains/${id}/dmarc-wizard`}
+              style={s.upgradeBtn}
+            >
+              Upgrade to {guidance.action.targetPolicy} →
+            </a>
           </div>
         )}
         {total === 0 && dnsOk !== null && (
@@ -414,6 +391,102 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
           </p>
         )}
       </div>
+
+      {/* Rollout progress (T007+T008+T011+T012) */}
+      {rollout && rollout.current_policy !== 'none' && rollout.current_policy !== null && (
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Rollout progress</span>
+              <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
+                {rollout.current_policy === 'quarantine' ? 'Quarantine' : 'Reject'}: {rollout.current_pct ?? 100}% of traffic
+              </span>
+              {rollout.behind_schedule && (
+                <span style={{ padding: '1px 6px', borderRadius: '9999px', fontSize: '0.68rem', fontWeight: 700, color: '#92400e', background: '#fef3c7' }}>
+                  Behind schedule
+                </span>
+              )}
+            </div>
+            {rollout.next_step && (
+              <button
+                style={{ ...s.copyBtn, background: rollout.blocked ? '#f3f4f6' : '#2563eb', color: rollout.blocked ? '#9ca3af' : '#fff', borderColor: rollout.blocked ? '#e5e7eb' : '#2563eb', cursor: rollout.blocked ? 'not-allowed' : 'pointer' }}
+                onClick={() => { if (!rollout.blocked) setShowRolloutModal(true); }}
+                disabled={rollout.blocked}
+                title={rollout.block_reason ?? undefined}
+              >
+                Increase coverage →
+              </button>
+            )}
+            {!rollout.next_step && (
+              <span style={{ padding: '1px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 700, color: '#15803d', background: '#dcfce7' }}>
+                Fully graduated
+              </span>
+            )}
+          </div>
+          {/* Progress bar */}
+          <div style={{ height: '6px', background: '#f3f4f6', borderRadius: '999px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.round(((rollout.current_step_index + 1) / rollout.total_steps) * 100)}%`, background: '#2563eb', borderRadius: '999px', transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: '#9ca3af', marginTop: '0.2rem' }}>
+            <span>Step {rollout.current_step_index + 1} of {rollout.total_steps}</span>
+            <span>{rollout.current_step_index + 1 < rollout.total_steps ? `Next: ${rollout.next_step?.policy} ${rollout.next_step?.pct}%` : 'Complete'}</span>
+          </div>
+          {rollout.blocked && rollout.block_reason && (
+            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#b45309', background: '#fef3c7', borderRadius: '4px', padding: '0.3rem 0.5rem' }}>
+              ⚠ {rollout.block_reason}
+            </p>
+          )}
+          {rollout.has_unknown_senders && !rollout.blocked && (
+            <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
+              Note: unknown senders still seen in the last 7 days — verify all legitimate senders are configured before advancing.
+            </p>
+          )}
+          {rolloutError && <p style={{ margin: '0.3rem 0 0', fontSize: '0.72rem', color: '#dc2626' }}>{rolloutError}</p>}
+        </div>
+      )}
+
+      {/* Rollout advance modal */}
+      {showRolloutModal && rollout?.next_step && rollout.dns_preview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowRolloutModal(false); }}>
+          <div style={{ background: '#fff', borderRadius: '10px', padding: '1.25rem', maxWidth: '520px', width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700 }}>
+              Advance to {rollout.next_step.policy} {rollout.next_step.pct}%
+            </h3>
+            <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: '#6b7280' }}>
+              Update your <code>_dmarc.{domain.domain}</code> TXT record to:
+            </p>
+            <div style={{ ...s.dnsRow, flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+              <code style={{ ...s.dnsCode, flex: 1 }}>{rollout.dns_preview}</code>
+              <button style={s.copyBtn} onClick={() => copy(rollout.dns_preview!)}>
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button style={{ ...s.copyBtn }} onClick={() => setShowRolloutModal(false)}>Cancel</button>
+              <button
+                style={{ ...s.copyBtn, background: '#2563eb', color: '#fff', borderColor: '#2563eb', opacity: rolloutBusy ? 0.6 : 1 }}
+                disabled={rolloutBusy}
+                onClick={async () => {
+                  setRolloutBusy(true); setRolloutError(null);
+                  try {
+                    await advanceRollout(id, rollout!.next_step!.policy, rollout!.next_step!.pct);
+                    const updated = await getRolloutNext(id);
+                    setRollout(updated);
+                    setShowRolloutModal(false);
+                  } catch (e: any) {
+                    setRolloutError(e.message ?? 'Failed');
+                  } finally {
+                    setRolloutBusy(false);
+                  }
+                }}
+              >
+                {rolloutBusy ? 'Saving…' : 'Mark as applied'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Daily bars */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -563,6 +636,7 @@ const s = {
   guidanceBody: { margin: '0 0 0.75rem', color: '#374151', fontSize: '0.9rem', lineHeight: 1.6 } as const,
   guidanceAction: { display: 'flex', flexDirection: 'column' as const, gap: '0.4rem' },
   guidanceActionLabel: { fontSize: '0.8rem', color: '#6b7280' } as const,
+  upgradeBtn: { display: 'inline-block', padding: '0.4rem 1rem', background: '#111827', color: '#fff', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none', alignSelf: 'flex-start' as const } as const,
   dnsRow: { display: 'flex', alignItems: 'center', gap: '0.5rem' } as const,
   dnsCode: { flex: 1, minWidth: 0, padding: '0.4rem 0.6rem', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '4px', fontSize: '0.8rem', fontFamily: 'monospace', overflowX: 'auto' as const, whiteSpace: 'nowrap' as const },
   copyBtn: { padding: '0.35rem 0.75rem', background: '#111827', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' as const },

@@ -9,6 +9,8 @@ let _baseDomainCache: string | undefined;
 let _reportsDomainCache: string | undefined;
 let _fromEmailCache: string | undefined;
 let _workersSubdomainCache: string | undefined;
+let _brandLogoUrlCache: string | undefined;
+let _brandColorCache: string | undefined;
 
 /** Return the cached reports domain (e.g. "reports.yourdomain.com"). */
 export function reportsDomain(): string | undefined {
@@ -38,6 +40,16 @@ export function getBaseDomain(): string | undefined {
 /** Return the cached workers subdomain (e.g. "fellowshipdev"). */
 export function getWorkersSubdomain(): string | undefined {
   return _workersSubdomainCache;
+}
+
+/** Return the configured brand logo URL (optional, for HTML emails). */
+export function brandLogoUrl(): string | undefined {
+  return _brandLogoUrlCache;
+}
+
+/** Return the configured brand accent color (hex, e.g. "#4F46E5"). */
+export function brandColor(): string {
+  return _brandColorCache ?? '#4F46E5';
 }
 
 /**
@@ -105,6 +117,7 @@ export async function enrichEnv(env: Env, db?: D1Database): Promise<void> {
   if (effectiveDb && !_enrichedOnce) {
     const settings = await getSettings(effectiveDb, [
       'base_domain', 'zone_id', 'account_id', 'reports_domain', 'from_email', 'workers_subdomain',
+      'brand_logo_url', 'brand_color',
     ]);
 
     if (!_baseDomainCache) _baseDomainCache = settings.get('base_domain');
@@ -113,6 +126,9 @@ export async function enrichEnv(env: Env, db?: D1Database): Promise<void> {
     if (!_reportsDomainCache) _reportsDomainCache = settings.get('reports_domain');
     if (!_fromEmailCache) _fromEmailCache = settings.get('from_email');
     if (!_workersSubdomainCache) _workersSubdomainCache = settings.get('workers_subdomain');
+
+    if (!_brandLogoUrlCache) _brandLogoUrlCache = settings.get('brand_logo_url');
+    if (!_brandColorCache) _brandColorCache = settings.get('brand_color');
 
     // Fallback: derive base domain from domains.is_default=1 if not in settings.
     // This supports the multi-domain model where base_domain migrates out of settings.
@@ -165,4 +181,6 @@ export function resetEnvCache(): void {
   _reportsDomainCache = undefined;
   _fromEmailCache = undefined;
   _workersSubdomainCache = undefined;
+  _brandLogoUrlCache = undefined;
+  _brandColorCache = undefined;
 }
