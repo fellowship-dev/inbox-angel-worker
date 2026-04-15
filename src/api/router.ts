@@ -1756,13 +1756,14 @@ async function _handleApi(
       if (!body.domains || typeof body.domains !== 'string') return err('domains (string) is required', 400);
       const list = parseDomainList(body.domains);
       if (list.length === 0) return err('no valid domains provided', 400);
+      if (list.length > 50) return err('too many domains: limit is 50 per request', 400);
       const results = await bulkInsertDomains(
         { DB: env.DB, CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN },
         list,
         { actorId: actor.id, actorEmail: actor.email, ctx },
       );
       const imported = results.filter(r => r.status === 'imported').length;
-      return json({ imported, total: list.length, results }, imported > 0 ? 201 : 200);
+      return json({ imported, total: results.length, results }, imported > 0 ? 201 : 200);
     }
 
     // GET /api/domains/ct-discover?domain= — admin-only: enumerate subdomains via crt.sh
