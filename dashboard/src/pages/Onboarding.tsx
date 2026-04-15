@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { getDomains, getOnboardingStatus, applyDmarc, applySpf, getSpfLookupCount, getWizardState, updateWizardState, setupEmailRouting, setBaseDomain, registerDestination } from '../api';
+import { getDomains, getOnboardingStatus, applyDmarc, applySpf, getSpfLookupCount, getWizardState, updateWizardState, setupEmailRouting, setBaseDomain, registerDestination, fetchZones } from '../api';
+import type { CfZone } from '../api';
 import { SPF_PROVIDERS, detectProviders, extractIncludes, extractOtherMechanisms, buildSpfRecord, matchDkimProvider, findUnsignedSpfProviders } from '../email-service-providers';
 import type { EmailProvider } from '../email-service-providers';
 import type { OnboardingStatus, WizardState, WizardStepState } from '../types';
@@ -137,8 +138,13 @@ function StepNav({ onNext, onSkip, nextLabel = 'Continue →', showSkip = true }
 
 function DomainStep({ onDomainSet }: { onDomainSet: (domainId: number) => void }) {
   const [domain, setDomain] = useState('');
+  const [zones, setZones] = useState<CfZone[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchZones().then(r => setZones(r.zones)).catch(() => setZones([]));
+  }, []);
 
   const submit = async () => {
     const d = domain.toLowerCase().trim();
@@ -158,28 +164,55 @@ function DomainStep({ onDomainSet }: { onDomainSet: (domainId: number) => void }
     }
   };
 
+  const inputStyle = {
+    width: '100%', padding: '0.65rem 0.75rem',
+    border: '1.5px solid #d1d5db', borderRadius: '6px',
+    fontSize: '0.95rem', fontFamily: 'inherit', outline: 'none',
+    boxSizing: 'border-box' as const,
+  };
+
   return (
     <div>
-      <h2 style={s.stepTitle}>What's your domain?</h2>
+      <h2 style={s.stepTitle}>What's your main domain?</h2>
       <p style={{ ...s.body, marginTop: '0.5rem' }}>
-        Enter the domain you send email from. We'll check its current security
-        settings and walk you through any improvements.
+        Pick the domain you want to use as your InboxAngel home base. We'll create a{' '}
+        <code>reports</code> subdomain here to receive email authentication reports.
+        All other domains you add later will send their reports here too.
       </p>
       <div style={{ marginTop: '1rem' }}>
-        <input
-          type="text"
-          placeholder="yourdomain.com"
-          value={domain}
-          onInput={e => setDomain((e.target as HTMLInputElement).value)}
-          onKeyDown={e => e.key === 'Enter' && submit()}
-          style={{
-            width: '100%', padding: '0.65rem 0.75rem',
-            border: '1.5px solid #d1d5db', borderRadius: '6px',
-            fontSize: '0.95rem', fontFamily: 'inherit', outline: 'none',
-            boxSizing: 'border-box',
-          }}
-          autoFocus
-        />
+        {zones && zones.length > 0 ? (
+          <select
+            value={domain}
+            onChange={e => setDomain((e.target as HTMLSelectElement).value)}
+            style={{ ...inputStyle, cursor: 'pointer', background: 'white' }}
+          >
+            <option value="">— Select a domain from your Cloudflare account —</option>
+            {zones.map(z => (
+              <option key={z.id} value={z.name}>{z.name}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder="yourdomain.com"
+            value={domain}
+            onInput={e => setDomain((e.target as HTMLInputElement).value)}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            style={inputStyle}
+            autoFocus
+          />
+        )}
+        {zones && zones.length > 0 && (
+          <p style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.4rem' }}>
+            Not listed?{' '}
+            <button
+              onClick={() => setZones([])}
+              style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+            >
+              Enter manually
+            </button>
+          </p>
+        )}
       </div>
       {error && <p style={s.error}>{error}</p>}
       <div style={{ ...s.nav, marginTop: '1.5rem' }}>

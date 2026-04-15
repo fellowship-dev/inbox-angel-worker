@@ -334,6 +334,18 @@ export async function updateWizardState(domainId: number, updates: Partial<impor
   return res.json();
 }
 
+export interface CfZone {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export async function fetchZones(): Promise<{ zones: CfZone[] }> {
+  const res = await apiFetch('/api/zones');
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export interface RolloutNext {
   current_policy: string | null;
   current_pct: number | null;
@@ -391,6 +403,12 @@ export async function bulkImport(domains: string): Promise<BulkImportResponse> {
 
 export async function ctDiscover(domain: string): Promise<{ domain: string; subdomains: string[] }> {
   const res = await apiFetch(`/api/domains/ct-discover?domain=${encodeURIComponent(domain)}`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function setDefaultDomain(domainId: number): Promise<{ ok: boolean; domain: string; warning: string }> {
+  const res = await apiFetch(`/api/domains/${domainId}/set-default`, { method: 'PUT' });
   if (!res.ok) await throwApiError(res);
   return res.json();
 }

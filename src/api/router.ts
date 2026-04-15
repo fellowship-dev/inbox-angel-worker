@@ -31,6 +31,8 @@
 //   GET    /api/domains/:id/dns-check         — check _dmarc TXT record in DNS
 //   GET    /api/domains/:id/rollout-next      — current pct= step, next step, DNS preview, safety
 //   POST   /api/domains/:id/rollout-advance   — persist recommended rollout step
+//   PUT    /api/domains/:id/set-default       — designate domain as default (infrastructure hub)
+//   GET    /api/zones                         — list CF account zones (for zone picker)
 //   GET    /api/audit-log                     — immutable audit log (admin only)
 //   GET    /api/domains/:id/spf-flatten       — SPF flatten config + availability
 //   POST   /api/domains/:id/spf-flatten       — enable SPF flattening (triggers initial flatten)
@@ -822,7 +824,8 @@ async function _handleApi(
         await persistConfig(env.DB!, { zone_id: zoneId, account_id: accountId });
       }
 
-      // Create the domain row if it doesn't exist yet
+      // Create the domain row if it doesn't exist yet, then mark it as default.
+      // This is the first domain configured — it becomes the infrastructure hub.
       const existing = await getAllDomains(env.DB!);
       const alreadyHas = existing.results.some(d => d.domain === domain);
       let domainId: number | undefined;
@@ -840,6 +843,14 @@ async function _handleApi(
         domainId = existing.results.find(d => d.domain === domain)?.id;
       }
 
+      // Atomically designate this domain as the default (clears any existing default first)
+      if (domainId) {
+        await env.DB!.batch([
+          env.DB!.prepare('UPDATE domains SET is_default = 0'),
+          env.DB!.prepare('UPDATE domains SET is_default = 1 WHERE id = ?').bind(domainId),
+        ]);
+      }
+
       return json({
         ok: true,
         domain,
@@ -848,6 +859,29 @@ async function _handleApi(
         zone_id: zoneId ?? null,
         account_id: accountId ?? null,
       }, 201);
+    }
+
+    // GET /api/zones — list CF account zones for zone picker (requires CLOUDFLARE_API_TOKEN)
+    if (path === '/api/zones' && method === 'GET') {
+      if (!env.CLOUDFLARE_API_TOKEN) return err('Cloudflare API token not configured', 400);
+      try {
+        const res = await fetch('https://api.cloudflare.com/client/v4/zones?per_page=200&status=active', {
+          headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+        });
+        const data = await res.json() as {
+          success: boolean;
+          result?: { id: string; name: string; status: string }[];
+          errors?: { message: string }[];
+        };
+        if (!data.success) {
+          const msg = data.errors?.map(e => e.message).join(', ') ?? 'CF API error';
+          return err(msg, 502);
+        }
+        const zones = (data.result ?? []).map(z => ({ id: z.id, name: z.name, status: z.status }));
+        return json({ zones });
+      } catch {
+        return err('Failed to fetch zones from Cloudflare', 502);
+      }
     }
 
     // GET /api/domains
@@ -1379,6 +1413,39 @@ async function _handleApi(
 
       await setSetting(env.DB, `wizard_state_${id}`, JSON.stringify(current));
       return json(current);
+    }
+
+    // PUT /api/domains/:id/set-default — designate this domain as the default (infrastructure hub).
+    // Atomically clears is_default on all rows then sets it on the target.
+    // Resets env caches so REPORTS_DOMAIN/FROM_EMAIL re-derive immediately.
+    // Does NOT re-provision DNS — caller must re-apply DMARC on other domains if needed.
+    const setDefaultMatch = path.match(/^\/api\/domains\/([^/]+)\/set-default$/);
+    if (setDefaultMatch && method === 'PUT') {
+      const id = parseInt(setDefaultMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
+
+      await env.DB!.batch([
+        env.DB!.prepare('UPDATE domains SET is_default = 0'),
+        env.DB!.prepare('UPDATE domains SET is_default = 1 WHERE id = ?').bind(id),
+      ]);
+
+      // Reset caches so next request re-derives REPORTS_DOMAIN and FROM_EMAIL from new default
+      resetEnvCache();
+
+      logAudit(env.DB!, {
+        actor_id: userBySession?.id ?? null, actor_email: userBySession?.email ?? null, actor_type: 'user',
+        action: 'domain.set_default',
+        resource_type: 'domain', resource_id: String(id), resource_name: domain.domain,
+        after_value: { is_default: true },
+      }, ctx);
+
+      return json({
+        ok: true,
+        domain: domain.domain,
+        warning: 'Auth records for other domains now point to the old reports subdomain. Re-apply DMARC on each domain to update them.',
+      });
     }
 
     // GET /api/domains/:id/rollout-next — current pct= step, next step, DNS preview, safety checks
