@@ -1422,10 +1422,6 @@ async function _handleApi(
     const setDefaultMatch = path.match(/^\/api\/domains\/([^/]+)\/set-default$/);
     if (setDefaultMatch && method === 'PUT') {
       const id = parseInt(setDefaultMatch[1], 10);
-    // GET /api/domains/:id/rollout-next — current pct= step, next step, DNS preview, safety checks
-    const rolloutNextMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-next$/);
-    if (rolloutNextMatch && method === 'GET') {
-      const id = parseInt(rolloutNextMatch[1], 10);
       if (isNaN(id)) return err('invalid domain id', 400);
       const domain = await getDomainById(env.DB, id);
       if (!domain) return err('domain not found', 404);
@@ -1451,6 +1447,14 @@ async function _handleApi(
         warning: 'Auth records for other domains now point to the old reports subdomain. Re-apply DMARC on each domain to update them.',
       });
     }
+
+    // GET /api/domains/:id/rollout-next — current pct= step, next step, DNS preview, safety checks
+    const rolloutNextMatch = path.match(/^\/api\/domains\/([^/]+)\/rollout-next$/);
+    if (rolloutNextMatch && method === 'GET') {
+      const id = parseInt(rolloutNextMatch[1], 10);
+      if (isNaN(id)) return err('invalid domain id', 400);
+      const domain = await getDomainById(env.DB, id);
+      if (!domain) return err('domain not found', 404);
 
       // Fetch live DMARC record to get current pct=
       let currentRecord: string | null = null;

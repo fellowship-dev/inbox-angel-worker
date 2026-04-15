@@ -147,7 +147,7 @@ describe('PUT /api/domains/:id/set-default', () => {
 
 describe('migration 0005 backfill', () => {
   const migrationSql = readFileSync(
-    join(__dirname, '../../migrations/0005_add_is_default.sql'),
+    join(__dirname, '../../migrations/0006_add_is_default.sql'),
     'utf-8'
   );
 
