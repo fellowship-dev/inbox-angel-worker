@@ -17,6 +17,7 @@ export interface Domain {
   auth_record_provisioned: 0 | 1;
   dns_record_id: string | null;  // Cloudflare DNS record ID for deprovision
   spf_lookup_count: number | null; // cached SPF lookup depth (updated on add + daily cron)
+  parent_id: number | null;      // non-null for subdomains; references domains.id
   created_at: number;
   updated_at: number;
 }
