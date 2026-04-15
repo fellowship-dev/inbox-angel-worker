@@ -63,6 +63,7 @@ import {
   getReportSourcesByDate,
   getDayReportSummary,
   getDomainExportData,
+  getCheckSummary,
   getAnomalySources,
   getAllSources,
   getSetting,
@@ -366,6 +367,20 @@ async function exportDomainData(env: Env, domainId: string): Promise<Response> {
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
+}
+
+async function getDomainCheckSummary(env: Env, domainId: string): Promise<Response> {
+  const id = parseInt(domainId, 10);
+  if (isNaN(id)) return err('invalid domain id', 400);
+
+  const domain = await getDomainById(env.DB, id);
+  if (!domain) return err('domain not found', 404);
+
+  const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+  const summary = await getCheckSummary(env.DB, id, since);
+  if (!summary) return err('check summary not found', 404);
+
+  return json(summary);
 }
 
 async function getDomainReportByDate(env: Env, domainId: string, url: URL): Promise<Response> {
@@ -885,6 +900,11 @@ async function _handleApi(
     const exportMatch = path.match(/^\/api\/domains\/([^/]+)\/export$/);
     if (exportMatch && method === 'GET') {
       return await exportDomainData(env, exportMatch[1]);
+    }
+    // GET /api/domains/:id/check-summary — DMARC/SPF/DKIM/MTA-STS summary for PDF report
+    const checkSummaryMatch = path.match(/^\/api\/domains\/([^/]+)\/check-summary$/);
+    if (checkSummaryMatch && method === 'GET') {
+      return await getDomainCheckSummary(env, checkSummaryMatch[1]);
     }
     // GET /api/domains/:id/dns-check — check if user has added the _dmarc TXT record
     const dnsCheckMatch = path.match(/^\/api\/domains\/([^/]+)\/dns-check$/);

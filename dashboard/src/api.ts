@@ -36,6 +36,12 @@ export async function getDomains(): Promise<{ domains: import('./types').Domain[
   return res.json();
 }
 
+export async function getDomainCheckSummary(id: number): Promise<import('./types').DomainCheckSummary> {
+  const res = await apiFetch(`/api/domains/${id}/check-summary`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function getDomainStats(id: number, days = 7): Promise<import('./types').DomainStats> {
   const res = await apiFetch(`/api/domains/${id}/stats?days=${days}`);
   if (!res.ok) await throwApiError(res);
