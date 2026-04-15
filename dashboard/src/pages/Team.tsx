@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getTeam, inviteTeamMember, removeTeamMember } from '../api';
 import type { TeamMember } from '../api';
+import { formatDate } from '../utils/dates';
 
 interface Props {
   onUnauthorized: () => void;
-}
-
-function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function Team({ onUnauthorized }: Props) {

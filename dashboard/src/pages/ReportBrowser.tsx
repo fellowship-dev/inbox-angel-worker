@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getReports } from '../api';
 import type { AggregateReport } from '../types';
+import { formatDate, relativeTime } from '../utils/dates';
 
 interface Props {
   domainId: number;
   onUnauthorized: () => void;
 }
 
-function fmtDate(ts: number): string {
+/** ISO date key for routing (YYYY-MM-DD) — separate from display format */
+function toIsoDate(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10);
 }
 
@@ -90,7 +92,7 @@ export function ReportBrowser({ domainId, onUnauthorized }: Props) {
           </thead>
           <tbody>
             {visible.map((r) => {
-              const date = fmtDate(r.date_begin);
+              const date = toIsoDate(r.date_begin);
               const passRate = r.total_count > 0 ? Math.round((r.pass_count / r.total_count) * 100) : null;
               const rateColor = passRate === null ? '#9ca3af'
                 : passRate >= 95 ? '#16a34a'
@@ -100,7 +102,10 @@ export function ReportBrowser({ domainId, onUnauthorized }: Props) {
                 <tr key={r.id}>
                   <td style={s.td}>
                     <a href={`#/domains/${domainId}/reports/${date}`} style={s.dateLink}>
-                      {date}
+                      {formatDate(r.date_begin)}
+                      <span style={{ display: 'block', fontSize: '0.72rem', color: '#9ca3af', fontFamily: 'inherit', fontWeight: 400 }}>
+                        {relativeTime(r.date_begin)}
+                      </span>
                     </a>
                   </td>
                   {domains.length > 1 && <td style={{ ...s.td, color: '#6b7280' }}>{r.domain}</td>}

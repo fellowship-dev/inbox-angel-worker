@@ -8,6 +8,7 @@
 
 import { getWeeklyDomainStats, getTopFailingSources, DomainWeeklyStat, FailingSource } from '../db/queries';
 import { reportsDomain, fromEmail } from '../env-utils';
+import { buildWeeklyDigestHtml } from '../email/html-templates';
 import { version } from '../../package.json';
 
 const GH_RAW = 'https://raw.githubusercontent.com/Fellowship-dev/inbox-angel-worker/main/package.json';
@@ -121,6 +122,7 @@ async function sendDigest(
   email: string,
   subject: string,
   body: string,
+  html: string,
   env: DigestEnv,
 ): Promise<void> {
   if (!env.SEND_EMAIL) {
@@ -134,6 +136,7 @@ async function sendDigest(
       to: [email],
       subject,
       text: body,
+      html,
     });
   } catch (e) {
     console.error(`[digest] send failed for ${email}:`, e);
@@ -179,12 +182,22 @@ export async function sendWeeklyDigests(env: DigestEnv, now = Date.now()): Promi
     }
 
     const body = buildDigestBody(admin.name ?? 'there', stats, sourcesByDomain, weekLabel, ruaAddress, rd, latestVersion);
+    const html = buildWeeklyDigestHtml({
+      recipientName: admin.name ?? 'there',
+      stats,
+      sourcesByDomain,
+      weekLabel,
+      ruaAddress,
+      reportsDomain: rd,
+      latestVersion,
+      currentVersion: version,
+    });
     const hasIssues = stats.some(s => s.fail_messages > 0 || !s.dmarc_policy || s.dmarc_policy === 'none');
     const subject = hasIssues
       ? `⚠️ DMARC Weekly Digest — action needed`
       : `✅ DMARC Weekly Digest — all clear`;
 
-    await sendDigest(admin.email, subject, body, env);
+    await sendDigest(admin.email, subject, body, html, env);
     console.log(`[digest] sent to ${admin.email} (${stats.length} domain(s))`);
   } catch (e) {
     console.error('[digest] error:', e);

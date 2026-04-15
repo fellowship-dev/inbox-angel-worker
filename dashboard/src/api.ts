@@ -36,6 +36,12 @@ export async function getDomains(): Promise<{ domains: import('./types').Domain[
   return res.json();
 }
 
+export async function getDomainCheckSummary(id: number): Promise<import('./types').DomainCheckSummary> {
+  const res = await apiFetch(`/api/domains/${id}/check-summary`);
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
 export async function getDomainStats(id: number, days = 7): Promise<import('./types').DomainStats> {
   const res = await apiFetch(`/api/domains/${id}/stats?days=${days}`);
   if (!res.ok) await throwApiError(res);
@@ -356,6 +362,35 @@ export async function advanceRollout(domainId: number, policy: string, pct: numb
     method: 'POST',
     body: JSON.stringify({ policy, pct }),
   });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export interface BulkImportItemResult {
+  domain: string;
+  status: 'imported' | 'duplicate' | 'invalid' | 'error';
+  error?: string;
+  dns_record_id?: string | null;
+  manual_dns?: boolean;
+}
+
+export interface BulkImportResponse {
+  imported: number;
+  total: number;
+  results: BulkImportItemResult[];
+}
+
+export async function bulkImport(domains: string): Promise<BulkImportResponse> {
+  const res = await apiFetch('/api/domains/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify({ domains }),
+  });
+  if (!res.ok) await throwApiError(res);
+  return res.json();
+}
+
+export async function ctDiscover(domain: string): Promise<{ domain: string; subdomains: string[] }> {
+  const res = await apiFetch(`/api/domains/ct-discover?domain=${encodeURIComponent(domain)}`);
   if (!res.ok) await throwApiError(res);
   return res.json();
 }

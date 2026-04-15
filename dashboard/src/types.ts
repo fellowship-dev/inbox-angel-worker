@@ -191,6 +191,22 @@ export interface OnboardingStatus {
   };
 }
 
+export interface DomainCheckSummary {
+  domain_id: number;
+  domain: string;
+  dmarc_policy: string | null;
+  spf_record: string | null;
+  total_messages: number;
+  pass_messages: number;
+  fail_messages: number;
+  dkim_total: number;
+  dkim_pass: number;
+  spf_total: number;
+  spf_pass: number;
+  mta_sts_enabled: number; // 0 | 1
+  mta_sts_mode: string | null;
+}
+
 export type WizardStepState = 'not_started' | 'complete' | 'skipped';
 
 export interface WizardState {
