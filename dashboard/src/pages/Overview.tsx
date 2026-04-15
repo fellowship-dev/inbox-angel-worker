@@ -60,6 +60,78 @@ function ScoreCircle({ score }: { score: number | null }) {
   );
 }
 
+function DomainRowItem({ row, hovered, setHovered, mobile, indent }: {
+  row: DomainRow;
+  hovered: number | null;
+  setHovered: (id: number | null) => void;
+  mobile: boolean;
+  indent: boolean;
+}) {
+  const { domain, passRate, total, failed, wizardComplete, wizardTotal } = row;
+  const score = passRate !== null ? Math.round(passRate * 100) : null;
+  const setupIncomplete = wizardComplete < wizardTotal;
+  return (
+    <div
+      style={{
+        ...styles.row,
+        background: hovered === domain.id ? '#f9fafb' : 'transparent',
+        ...(indent ? styles.rowIndent : {}),
+      }}
+      onClick={() => { window.location.hash = `#/domains/${domain.id}`; }}
+      onMouseEnter={() => setHovered(domain.id)}
+      onMouseLeave={() => setHovered(null)}
+    >
+      {indent && <span style={styles.indentBar}>└</span>}
+      <ScoreCircle score={score} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+          {domain.domain}
+        </span>
+        {setupIncomplete && (
+          <a
+            href={`#/domains/${domain.id}/setup/2`}
+            onClick={(e: Event) => e.stopPropagation()}
+            style={{ fontSize: '0.7rem', color: '#d97706', textDecoration: 'none' }}
+          >
+            {wizardComplete}/{wizardTotal} steps — Continue setup →
+          </a>
+        )}
+      </div>
+      <span style={styles.badge}>
+        {domain.dmarc_policy ? POLICY_LABEL[domain.dmarc_policy] : '—'}
+      </span>
+      {!mobile && total > 0 && (
+        <span style={styles.stat}>{total.toLocaleString()} msg</span>
+      )}
+      {!mobile && failed > 0 && (
+        <span style={{ ...styles.stat, color: '#dc2626' }}>{failed.toLocaleString()} failed</span>
+      )}
+      <span style={styles.muted}>→</span>
+    </div>
+  );
+}
+
+// Group flat domain rows into parent → children tree.
+// Domains whose parent is not monitored appear at top level as standalone.
+function buildTree(rows: DomainRow[]): { root: DomainRow; children: DomainRow[] }[] {
+  const byId = new Map(rows.map((r) => [r.domain.id, r]));
+  const childrenMap = new Map<number, DomainRow[]>();
+  const rootRows: DomainRow[] = [];
+
+  for (const row of rows) {
+    const pid = row.domain.parent_id;
+    if (pid !== null && pid !== undefined && byId.has(pid)) {
+      const list = childrenMap.get(pid) ?? [];
+      list.push(row);
+      childrenMap.set(pid, list);
+    } else {
+      rootRows.push(row);
+    }
+  }
+
+  return rootRows.map((root) => ({ root, children: childrenMap.get(root.domain.id) ?? [] }));
+}
+
 interface Props {
   onUnauthorized: () => void;
 }
@@ -150,45 +222,12 @@ export function Overview({ onUnauthorized }: Props) {
         </div>
       )}
 
-      {rows.map(({ domain, passRate, total, failed, wizardComplete, wizardTotal }) => {
-        const score = passRate !== null ? Math.round(passRate * 100) : null;
-        const setupIncomplete = wizardComplete < wizardTotal;
-        return (
-          <div
-            key={domain.id}
-            style={{ ...styles.row, background: hovered === domain.id ? '#f9fafb' : 'transparent' }}
-            onClick={() => { window.location.hash = `#/domains/${domain.id}`; }}
-            onMouseEnter={() => setHovered(domain.id)}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <ScoreCircle score={score} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                {domain.domain}
-              </span>
-              {setupIncomplete && (
-                <a
-                  href={`#/domains/${domain.id}/setup/2`}
-                  onClick={(e: Event) => e.stopPropagation()}
-                  style={{ fontSize: '0.7rem', color: '#d97706', textDecoration: 'none' }}
-                >
-                  {wizardComplete}/{wizardTotal} steps — Continue setup →
-                </a>
-              )}
-            </div>
-            <span style={styles.badge}>
-              {domain.dmarc_policy ? POLICY_LABEL[domain.dmarc_policy] : '—'}
-            </span>
-            {!mobile && total > 0 && (
-              <span style={styles.stat}>{total.toLocaleString()} msg</span>
-            )}
-            {!mobile && failed > 0 && (
-              <span style={{ ...styles.stat, color: '#dc2626' }}>{failed.toLocaleString()} failed</span>
-            )}
-            <span style={styles.muted}>→</span>
-          </div>
-        );
-      })}
+      {buildTree(rows).flatMap(({ root, children }) => [
+        <DomainRowItem key={root.domain.id} row={root} hovered={hovered} setHovered={setHovered} mobile={mobile} indent={false} />,
+        ...children.map((child) => (
+          <DomainRowItem key={child.domain.id} row={child} hovered={hovered} setHovered={setHovered} mobile={mobile} indent={true} />
+        )),
+      ])}
     </div>
   );
 }
@@ -259,5 +298,16 @@ const styles = {
     fontWeight: 600,
     cursor: 'pointer',
     textDecoration: 'none',
+  } as const,
+  rowIndent: {
+    paddingLeft: '2rem',
+    borderLeft: '2px solid #f3f4f6',
+    marginLeft: '1rem',
+  } as const,
+  indentBar: {
+    color: '#d1d5db',
+    fontSize: '0.85rem',
+    flexShrink: 0,
+    userSelect: 'none' as const,
   } as const,
 };
