@@ -103,7 +103,7 @@ import { track } from '../telemetry';
 import { reportsDomain, fromEmail, enrichEnv, getZoneId, getAccountId, getBaseDomain, resetEnvCache } from '../env-utils';
 import { logAudit } from '../audit/log';
 import { flattenSpf, restoreSpf, collectIps, buildFlatRecord } from '../email/spf-flattener';
-import { lookupSpf, countSpfLookupsFromRecord } from '../email/dns-check';
+import { lookupSpf, lookupDmarc, countSpfLookupsFromRecord } from '../email/dns-check';
 import { getAllDkimSelectors } from '../../dashboard/src/email-service-providers';
 import {
   provisionMtaSts,
@@ -226,11 +226,28 @@ async function addDomain(request: Request, env: Env, userEmail?: string, ctx?: E
   // Return the full domain row so the frontend has the ID
   const domainRow = await getDomainById(env.DB, domainId);
 
+  // If subdomain, fetch parent context for the inheritance-aware wizard
+  let parent_context: { domain: string; dmarc_policy: string | null; dmarc_sp: string | null; has_dmarc: boolean } | null = null;
+  if (domainRow?.parent_id) {
+    const parentRow = await getDomainById(env.DB, domainRow.parent_id);
+    if (parentRow) {
+      const parentDmarc = await lookupDmarc(parentRow.domain).catch(() => null);
+      parent_context = {
+        domain: parentRow.domain,
+        dmarc_policy: parentDmarc?.policy ?? null,
+        // sp= tag: null means not explicitly set (frontend distinguishes sp=none vs absent)
+        dmarc_sp: parentDmarc ? (parentDmarc.subdomainPolicy ?? null) : null,
+        has_dmarc: parentDmarc !== null,
+      };
+    }
+  }
+
   return json({
     domain: domainRow,
     rua_hint: `Add rua=mailto:${ruaAddress} to your DMARC record`,
     auth_record: authRecordName,
     dns_instructions: `Add this TXT record to authorize DMARC reports:\n  ${authRecordName}  TXT  "v=DMARC1;"`,
+    ...(parent_context !== null ? { parent_context } : {}),
   }, 201);
 }
 
