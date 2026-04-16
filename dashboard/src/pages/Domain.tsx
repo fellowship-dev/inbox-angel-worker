@@ -116,6 +116,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const [rolloutBusy, setRolloutBusy] = useState(false);
   const [rolloutError, setRolloutError] = useState<string | null>(null);
   const [showRolloutModal, setShowRolloutModal] = useState(false);
+  const [cfManaged, setCfManaged] = useState(false);
   const mobile = useIsMobile();
 
   // Initial load: domain info + failing sources (don't depend on chartDays)
@@ -603,10 +604,13 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
               {sources.map((src) => (
                 <div key={src.source_ip} style={s.sourceCard}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <code style={s.code}>{src.source_ip}</code>
+                    {(src.org || src.base_domain)
+                      ? <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#111827' }}>{src.org ?? src.base_domain}</span>
+                      : <code style={s.code}>{src.source_ip}</code>
+                    }
                     <span style={s.muted}>{src.total.toLocaleString()} msg</span>
                   </div>
-                  {(src.org || src.base_domain) && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.2rem' }}>{src.org ?? src.base_domain}</div>}
+                  {(src.org || src.base_domain) && <code style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#9ca3af' }}>{src.source_ip}</code>}
                   {src.header_from && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.2rem' }}>{src.header_from}</div>}
                 </div>
               ))}
@@ -615,7 +619,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
             <table style={s.table}>
               <thead>
                 <tr>
-                  {['IP', 'Sending as', 'Failed messages'].map((h) => (
+                  {['Source', 'Sending as', 'Failed messages'].map((h) => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
@@ -624,8 +628,11 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
                 {sources.map((src) => (
                   <tr key={src.source_ip}>
                     <td style={s.td}>
-                      <code style={s.code}>{src.source_ip}</code>
-                      {(src.org || src.base_domain) && <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{src.org ?? src.base_domain}</div>}
+                      {(src.org || src.base_domain)
+                        ? <span style={{ fontWeight: 600, color: '#111827' }}>{src.org ?? src.base_domain}</span>
+                        : <code style={s.code}>{src.source_ip}</code>
+                      }
+                      {(src.org || src.base_domain) && <code style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#9ca3af' }}>{src.source_ip}</code>}
                     </td>
                     <td style={s.td}>{src.header_from ?? <span style={s.muted}>—</span>}</td>
                     <td style={{ ...s.td, textAlign: 'right' }}>{src.total.toLocaleString()}</td>

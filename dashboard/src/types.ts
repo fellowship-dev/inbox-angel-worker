@@ -198,6 +198,8 @@ export interface OnboardingStatus {
     destination_debug?: string;
     reports_domain: string | null;
     admin_email: string | null;
+    null_sender_spf?: boolean;
+    null_sender_dmarc?: boolean;
   };
 }
 

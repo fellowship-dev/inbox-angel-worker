@@ -28,8 +28,8 @@ const POLICY_LABEL: Record<string, string> = { none: 'none', quarantine: 'quar.'
 
 // Lighthouse-style score circle — SVG ring with number inside
 function ScoreCircle({ score }: { score: number | null }) {
-  const size = 36;
-  const r = 14;
+  const size = 40;
+  const r = 16;
   const cx = size / 2;
   const circumference = 2 * Math.PI * r;
   const color = score === null ? '#d1d5db'

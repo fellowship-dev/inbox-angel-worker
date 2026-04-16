@@ -80,7 +80,7 @@ export function AuthGate({ onSave }: Props) {
         setTelemetry(s.telemetry_default);
         if (s.turnstile_site_key) loadTurnstileScript();
       })
-      .catch(() => setStatus({ configured: false, prefill: { name: '', email: '' }, telemetry_default: false, turnstile_site_key: null }));
+      .catch(() => setStatus({ configured: false, prefill: { name: '', email: '' }, telemetry_default: false, turnstile_site_key: null, has_domain: false }));
   }, []);
 
   const submit = async (e: Event) => {
