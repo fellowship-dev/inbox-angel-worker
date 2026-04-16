@@ -56,17 +56,32 @@ export function brandColor(): string {
  * Resolve the Cloudflare zone ID via CF API.
  * Also caches account ID from the same response.
  * Result is cached in-process — only one API call per cold start.
+ *
+ * CF zones are apex-only. If the lookup returns empty (e.g. base_domain is
+ * a subdomain like "marketing.acme.com"), we strip one label and retry once
+ * with the apex domain ("acme.com").
  */
 async function resolveZoneId(apiToken: string): Promise<string | undefined> {
   if (_zoneIdCache) return _zoneIdCache;
   if (!_baseDomainCache) return undefined;
 
-  try {
+  const lookup = async (name: string) => {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones?name=${encodeURIComponent(_baseDomainCache)}`,
+      `https://api.cloudflare.com/client/v4/zones?name=${encodeURIComponent(name)}`,
       { headers: { Authorization: `Bearer ${apiToken}` } }
     );
-    const data = await res.json() as { result?: { id: string; account: { id: string } }[] };
+    return res.json() as Promise<{ result?: { id: string; account: { id: string } }[] }>;
+  };
+
+  try {
+    let data = await lookup(_baseDomainCache);
+    if (!data.result?.length) {
+      // Retry with apex label (strip one subdomain label)
+      const parts = _baseDomainCache.split('.');
+      if (parts.length > 2) {
+        data = await lookup(parts.slice(1).join('.'));
+      }
+    }
     _zoneIdCache = data.result?.[0]?.id;
     _accountIdCache = data.result?.[0]?.account?.id;
     return _zoneIdCache;

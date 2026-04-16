@@ -1,8 +1,16 @@
+export interface ParentContext {
+  domain: string;
+  dmarc_policy: string | null;
+  dmarc_sp: string | null;    // effective sp= (null if no DMARC)
+  has_dmarc: boolean;
+}
+
 export interface Domain {
   id: number;
   domain: string;
   dmarc_policy: 'none' | 'quarantine' | 'reject' | null;
   rua_address: string;
+  parent_id: number | null;   // non-null for subdomains
   created_at: number; // unix timestamp
   alerts_enabled: number; // 1 = on, 0 = off
   is_default: number; // 1 = this domain is the reports infrastructure hub
@@ -26,6 +34,7 @@ export interface AddDomainResult {
   rua_hint: string;
   manual_dns?: boolean;
   dns_instructions?: string;
+  parent_context?: ParentContext;
 }
 
 export interface FailingSource {

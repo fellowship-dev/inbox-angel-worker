@@ -10,10 +10,24 @@ export function getDomainById(db: D1Database, id: number) {
   return db.prepare('SELECT * FROM domains WHERE id = ?').bind(id).first<Domain>();
 }
 
-export function insertDomain(db: D1Database, d: Pick<Domain, 'domain' | 'rua_address'>) {
+export async function insertDomain(db: D1Database, d: Pick<Domain, 'domain' | 'rua_address'>) {
+  // Auto-detect parent: strip the leftmost label and check if the apex exists
+  const parts = d.domain.split('.');
+  let parentId: number | null = null;
+  if (parts.length > 2) {
+    const candidate = parts.slice(1).join('.');
+    const parent = await db.prepare('SELECT id FROM domains WHERE domain = ?')
+      .bind(candidate).first<{ id: number }>();
+    if (parent) parentId = parent.id;
+  }
   return db.prepare(`
-    INSERT INTO domains (domain, rua_address) VALUES (?, ?)
-  `).bind(d.domain, d.rua_address).run();
+    INSERT INTO domains (domain, rua_address, parent_id) VALUES (?, ?, ?)
+  `).bind(d.domain, d.rua_address, parentId).run();
+}
+
+export function getSubdomains(db: D1Database, parentId: number) {
+  return db.prepare('SELECT * FROM domains WHERE parent_id = ? ORDER BY domain')
+    .bind(parentId).all<Domain>();
 }
 
 export function getAllDomains(db: D1Database) {

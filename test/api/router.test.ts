@@ -612,4 +612,68 @@ describe('PUT /api/domains/:id/wizard-state', () => {
 
 });
 
+// ── Subdomain support (T017 + T018) ──────────────────────────
+// T017: insertDomain auto-detects parent_id from existing domains
+// T018: POST /api/domains with subdomain returns parent_context
+
+describe('POST /api/domains — subdomain parent_context (T018)', () => {
+  // Mock lookupDmarc so no real DNS is called
+  vi.mock('../../src/email/dns-check', async (importOriginal) => {
+    const actual = await importOriginal() as Record<string, unknown>;
+    return {
+      ...actual,
+      lookupDmarc: vi.fn().mockResolvedValue({ policy: 'reject', subdomainPolicy: 'reject', pct: 100, rua: [], ruf: [], raw: 'v=DMARC1; p=reject; sp=reject' }),
+      lookupSpf: vi.fn().mockResolvedValue(null),
+    };
+  });
+
+  it('returns parent_context when subdomain is added and parent exists in DB', async () => {
+    const parentRow: Partial<Domain> = { id: 1, domain: 'acme.com', rua_address: 'rua@reports.inboxangel.io', parent_id: null };
+    const subdomainRow: Partial<Domain> = { id: 2, domain: 'marketing.acme.com', rua_address: 'rua@reports.inboxangel.io', parent_id: 1 };
+    const env = makeEnv();
+
+    let callCount = 0;
+    (env.DB.prepare as any).mockImplementation(() => ({
+      bind: vi.fn().mockReturnValue({
+        run: vi.fn().mockResolvedValue({ success: true, meta: { last_row_id: 2 } }),
+        first: vi.fn().mockImplementation(() => {
+          callCount++;
+          // 1st first() = parent lookup in insertDomain (SELECT id FROM domains WHERE domain = 'acme.com')
+          // 2nd first() = getDomainById for subdomainRow
+          // 3rd first() = getDomainById for parentRow (parent_context fetch)
+          if (callCount === 1) return Promise.resolve(parentRow);
+          if (callCount === 2) return Promise.resolve(subdomainRow);
+          return Promise.resolve(parentRow);
+        }),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+      }),
+    }));
+
+    const res = await handleApi(req('POST', '/api/domains', { domain: 'marketing.acme.com' }), env, ctx);
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(body.domain.domain).toBe('marketing.acme.com');
+    expect(body.parent_context).toBeDefined();
+    expect(body.parent_context.domain).toBe('acme.com');
+    expect(body.parent_context.has_dmarc).toBe(true);
+  });
+
+  it('returns no parent_context when apex domain is added', async () => {
+    const domainRow: Partial<Domain> = { id: 1, domain: 'acme.com', rua_address: 'rua@reports.inboxangel.io', parent_id: null };
+    const env = makeEnv();
+    (env.DB.prepare as any).mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        run: vi.fn().mockResolvedValue({ success: true, meta: { last_row_id: 1 } }),
+        first: vi.fn().mockResolvedValue(domainRow),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+      }),
+    });
+
+    const res = await handleApi(req('POST', '/api/domains', { domain: 'acme.com' }), env, ctx);
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(body.parent_context).toBeUndefined();
+  });
+});
+
 afterEach(() => vi.clearAllMocks());

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { addDomain, checkDomainDns, fetchZones } from '../api';
 import type { CfZone } from '../api';
-import type { AddDomainResult } from '../types';
+import type { AddDomainResult, ParentContext } from '../types';
 
 interface Props {
   onUnauthorized: () => void;
@@ -28,6 +28,54 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 type DnsStatus = 'checking' | 'found' | 'missing-rua' | 'not-found' | 'error';
+
+function SubdomainInheritanceBanner({ pc, subdomain }: { pc: ParentContext; subdomain: string }) {
+  let dmarcMsg: { icon: string; text: string; bg: string; color: string };
+  // RFC 7489 §6.3: when sp= is absent, the p= policy applies to subdomains.
+  // So effective subdomain policy = explicit sp= if present, otherwise p=.
+  const effectiveSp = pc.dmarc_sp ?? pc.dmarc_policy;
+  if (!pc.has_dmarc) {
+    dmarcMsg = {
+      icon: '⚠️',
+      text: `No DMARC record found on ${pc.domain}. Consider setting up ${pc.domain} first, then return here.`,
+      bg: '#fef9c3', color: '#92400e',
+    };
+  } else if (effectiveSp === 'reject') {
+    const via = pc.dmarc_sp === 'reject' ? 'sp=reject' : `p=reject (sp= not set, inherits p=)`;
+    dmarcMsg = {
+      icon: '✓',
+      text: `${pc.domain} enforces ${via} — this subdomain is already protected by the parent's policy. We still recommend adding an explicit _dmarc.${subdomain} record for independent control.`,
+      bg: '#dcfce7', color: '#15803d',
+    };
+  } else {
+    const spDesc = pc.dmarc_sp !== null ? `sp=${pc.dmarc_sp}` : `no sp= tag (inherits p=${pc.dmarc_policy ?? 'none'})`;
+    dmarcMsg = {
+      icon: '⚠️',
+      text: `${pc.domain} does not enforce a subdomain reject policy (${spDesc}). This subdomain can be spoofed. Add the DMARC record below to protect it independently.`,
+      bg: '#fef9c3', color: '#92400e',
+    };
+  }
+
+  return (
+    <div style={s.subBanner}>
+      <div style={s.subBannerTitle}>
+        Subdomain of <strong>{pc.domain}</strong> — inheritance summary
+      </div>
+      <div style={{ ...s.subBannerRow, background: dmarcMsg.bg, color: dmarcMsg.color }}>
+        <span>{dmarcMsg.icon}</span>
+        <span><strong>DMARC:</strong> {dmarcMsg.text}</span>
+      </div>
+      <div style={s.subBannerRow}>
+        <span>ℹ️</span>
+        <span><strong>SPF:</strong> SPF does not inherit. {subdomain} needs its own SPF record.</span>
+      </div>
+      <div style={s.subBannerRow}>
+        <span>ℹ️</span>
+        <span><strong>DKIM:</strong> DKIM does not inherit. Check with your email provider for subdomain signing setup.</span>
+      </div>
+    </div>
+  );
+}
 
 export function AddDomain({ onUnauthorized }: Props) {
   const [step, setStep] = useState<Step>('input');
@@ -155,6 +203,9 @@ export function AddDomain({ onUnauthorized }: Props) {
   return (
     <div style={s.page}>
       <div style={s.successBadge}>✓ Domain added</div>
+      {result!.parent_context && (
+        <SubdomainInheritanceBanner pc={result!.parent_context} subdomain={result!.domain.domain} />
+      )}
       <h1 style={s.title}>Add this DNS record</h1>
       <p style={s.subtitle}>
         Log in to wherever you manage <strong>{result!.domain.domain}</strong> — GoDaddy,
@@ -353,4 +404,27 @@ const s = {
   dnsWaiting: { background: '#f3f4f6', color: '#374151' },
   dnsFound: { background: '#dcfce7', color: '#15803d' },
   dnsMissingRua: { background: '#fef9c3', color: '#92400e' },
+  subBanner: {
+    border: '1.5px solid #e5e7eb',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    marginBottom: '1.5rem',
+    fontSize: '0.875rem',
+  },
+  subBannerTitle: {
+    background: '#f3f4f6',
+    padding: '0.6rem 1rem',
+    fontWeight: 600,
+    color: '#374151',
+    borderBottom: '1px solid #e5e7eb',
+  },
+  subBannerRow: {
+    display: 'flex',
+    gap: '0.5rem',
+    padding: '0.6rem 1rem',
+    borderBottom: '1px solid #f3f4f6',
+    lineHeight: 1.5,
+    color: '#374151',
+    background: '#fff',
+  } as const,
 };

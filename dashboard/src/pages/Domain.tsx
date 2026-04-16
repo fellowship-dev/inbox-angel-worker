@@ -96,6 +96,7 @@ const CHART_WINDOWS = [
 
 export function DomainDetail({ id, onUnauthorized }: Props) {
   const [domain, setDomain] = useState<Domain | null>(null);
+  const [allDomains, setAllDomains] = useState<Domain[]>([]);
   const [stats, setStats] = useState<DomainStats | null>(null);
   const [chartDays, setChartDays] = useState(7);
   const [sources, setSources] = useState<FailingSource[]>([]);
@@ -131,6 +132,7 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         ]);
         if (cancelled) return;
         setDomain(domains.find((d) => d.id === id) ?? null);
+        setAllDomains(domains);
         setSources(src.sources);
         if (flat) setSpfFlat(flat);
         if (mta) setMtaSts(mta);
@@ -186,6 +188,12 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
   const maxTotal = Math.max(...stats.stats.map((r) => r.total), 1);
   const policy = domain.dmarc_policy ?? 'none';
   const guidance = getGuidance(domain, passRate, total > 0, currentRecord);
+
+  // Subdomain / parent context
+  const subdomains = allDomains.filter((d) => d.parent_id === domain.id);
+  const parentDomain = domain.parent_id ? allDomains.find((d) => d.id === domain.parent_id) : null;
+  // Parse sp= from the raw DNS record (if available)
+  const spTag = currentRecord ? (currentRecord.match(/\bsp=([a-z]+)/)?.[1] ?? null) : null;
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -539,6 +547,49 @@ export function DomainDetail({ id, onUnauthorized }: Props) {
         </p>
       </div>
 
+      {/* Subdomain inheritance badge (T016) — shown when viewing a subdomain */}
+      {parentDomain && (
+        <div style={{ ...s.inheritanceBanner, ...(dnsOk ? s.inheritanceOwn : s.inheritanceInherits) }}>
+          {dnsOk
+            ? <>Has own DMARC record (<strong>p={policy}</strong>) — overrides parent <a href={`#/domains/${parentDomain.id}`} style={{ color: 'inherit' }}>{parentDomain.domain}</a>.</>
+            : <>Inherits DMARC from <a href={`#/domains/${parentDomain.id}`} style={{ color: 'inherit' }}>{parentDomain.domain}</a>
+                {parentDomain.dmarc_policy && <> (p={parentDomain.dmarc_policy})</>}. SPF and DKIM are independent — not inherited.</>
+          }
+        </div>
+      )}
+
+      {/* Subdomains section (T015) — shown when viewing an apex domain */}
+      {subdomains.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <div style={s.sectionHeader}>
+            <h3 style={s.sectionTitle}>Subdomains</h3>
+            <a href="#/add" style={s.viewAll}>+ Add subdomain →</a>
+          </div>
+          {spTag && (
+            <div style={{ ...s.inheritanceBanner, ...(spTag === 'reject' ? s.inheritanceOwn : s.inheritanceInherits), marginBottom: '0.75rem' }}>
+              {spTag === 'reject'
+                ? <>Subdomain policy: <strong>sp=reject</strong> — all subdomains without their own record are protected.</>
+                : <><strong>sp={spTag}</strong> — subdomains without their own DMARC record are NOT enforced. Consider adding sp=reject.</>
+              }
+            </div>
+          )}
+          {!spTag && currentRecord && (
+            <div style={{ ...s.inheritanceBanner, ...s.inheritanceInherits, marginBottom: '0.75rem' }}>
+              No sp= tag in your DMARC record. Subdomains without their own record inherit p={policy} — which may be too permissive.
+            </div>
+          )}
+          {subdomains.map((sub) => (
+            <a key={sub.id} href={`#/domains/${sub.id}`} style={s.subdomainRow}>
+              <span style={{ flex: 1 }}>└ {sub.domain}</span>
+              <span style={{ ...s.badge, color: POLICY_COLOR[sub.dmarc_policy ?? 'none'] ?? '#6b7280', marginRight: '0.5rem' }}>
+                {sub.dmarc_policy ?? '—'}
+              </span>
+              <span style={s.muted}>→</span>
+            </a>
+          ))}
+        </div>
+      )}
+
       {/* Failing sources */}
       {sources.length > 0 && (
         <div>
@@ -668,5 +719,17 @@ const s = {
     padding: '0.15rem 0.5rem', fontSize: '0.72rem', cursor: 'pointer',
     background: '#fff', color: '#6b7280', border: '1px solid #d1d5db',
     borderRadius: '4px', fontFamily: 'inherit',
+  } as const,
+  inheritanceBanner: {
+    fontSize: '0.85rem', lineHeight: 1.5,
+    padding: '0.6rem 0.85rem', borderRadius: '6px', marginBottom: '2rem',
+  } as const,
+  inheritanceInherits: { background: '#fffbeb', color: '#92400e' } as const,
+  inheritanceOwn: { background: '#f0fdf4', color: '#15803d' } as const,
+  subdomainRow: {
+    display: 'flex', alignItems: 'center', gap: '0.5rem',
+    padding: '0.5rem 0.75rem', borderBottom: '1px solid #f3f4f6',
+    textDecoration: 'none', color: '#374151', fontSize: '0.875rem',
+    borderRadius: '4px',
   } as const,
 };
