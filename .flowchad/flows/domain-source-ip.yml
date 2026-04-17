@@ -1,0 +1,52 @@
+name: domain-source-ip
+description: >
+  Verify PR #61 Step 1 — Source IP hierarchy in Domain list table.
+  Provider/org name should appear as primary (bold), raw IP as secondary (muted monospace).
+  Column header should read "Source" (renamed from "IP").
+
+steps:
+  - name: open-dashboard
+    action: navigate
+    url: "{{TARGET_URL}}"
+    expect: InboxAngel dashboard loads — shows login or domain list page
+
+  - name: screenshot-landing
+    action: screenshot
+    expect: page renders without blank screen or JS errors
+
+  - name: find-login-form
+    action: find
+    selector: "input[type='email'], input[type='password'], button[type='submit'], a[href*='login']"
+    optional: true
+    expect: login form or link is present if authentication is required
+
+  - name: check-auth-wall
+    action: screenshot
+    expect: if auth wall visible, document it; if domain list visible, proceed
+
+  - name: find-domain-table
+    action: find
+    selector: "table, [class*='domain'], [class*='Domain']"
+    optional: true
+    expect: domain list table or card grid is visible
+
+  - name: find-source-column
+    action: find
+    selector: "th, [class*='header']"
+    optional: true
+    expect: >
+      Table header contains "Source" column (not "IP").
+      Verifies column rename from PR #61.
+
+  - name: screenshot-source-column
+    action: screenshot
+    expect: >
+      Source column visible. Provider/org name appears bold as primary text.
+      Raw IP address appears below in muted monospace style (smaller, gray).
+      This is the hierarchy change from PR #61 Step 1 in Domain.tsx.
+
+  - name: verify-mobile-card
+    action: scroll
+    direction: down
+    optional: true
+    expect: mobile card view also shows org/provider name primary, IP secondary

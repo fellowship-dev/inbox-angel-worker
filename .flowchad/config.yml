@@ -1,0 +1,7 @@
+url: https://inbox-angel-worker.fellowshipdev.workers.dev
+persona: inbox-angel-qa
+
+smoketest:
+  flows:
+    - domain-source-ip
+    - score-circle
