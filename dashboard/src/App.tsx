@@ -16,12 +16,9 @@ import { ResetPassword } from './pages/ResetPassword';
 import { Onboarding } from './pages/Onboarding';
 import { SpfFlattenWizard } from './pages/SpfFlattenWizard';
 import { MtaStsWizard } from './pages/MtaStsWizard';
-<<<<<<< HEAD
 import { BulkImport } from './pages/BulkImport';
 import { CTDiscover } from './pages/CTDiscover';
-=======
 import { DmarcWizard } from './pages/DmarcWizard';
->>>>>>> origin/main
 import { AuthGate } from './AuthGate';
 import { getVersion, logout, type VersionInfo } from './api';
 

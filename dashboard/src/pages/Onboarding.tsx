@@ -842,7 +842,7 @@ function DmarcStep({ status, onNext, onSkip }: { status: OnboardingStatus; onNex
               {dmarc.auth_record.record_name && (
                 <div style={{ marginTop: '0.5rem' }}>
                   <p style={s.body}>Required record:</p>
-                  <CodeBlock value={`${dmarc.auth_record.record_name}  TXT  "v=DMARC1;"`} onCopy={() => copy(`${dmarc.auth_record.record_name}  TXT  "v=DMARC1;"`)} copied={copied} />
+                  <CodeBlock value={`${dmarc.auth_record.record_name}  TXT  "v=DMARC1;"`} onCopy={() => copy(`${dmarc.auth_record!.record_name}  TXT  "v=DMARC1;"`)} copied={copied} />
                   {cf_available && dmarc.current_record && (
                     <button
                       onClick={async () => {
