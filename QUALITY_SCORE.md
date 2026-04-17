@@ -8,6 +8,7 @@
 | api | F | 2026-04-16 | No code-structure.md; no FlowChad flow for API layer; no doc-coverage.json; staleness delta 40d; tests exist (router.test.ts) but zero prose docs |
 | db | F | 2026-04-16 | No code-structure.md; no FlowChad flow; no doc-coverage.json; staleness delta 40d; migration layer entirely undocumented |
 | core | F | 2026-04-16 | env-utils.ts has no documentation coverage in any layer; no code-structure.md, no FlowChad, no doc-coverage.json |
+| ci | F | 2026-04-17 | New domain (PR #63 — deploy.yml). No docs/code-structure.md repo-wide; no FlowChad flow; staleness ∞ (docs absent); 0 open issues ✅; test coverage N/A; no doc-coverage.json |
 
 ## Signal Reference
 
@@ -26,6 +27,7 @@
 |------|---------|---------|
 | 2026-04-16 | PR #60 (feat: subdomain support) | 4 domains scanned, 3 F grades, 1 D grade, 0 improvements — docs/code-structure.md absent repo-wide |
 | 2026-04-17 | PR #61 (feat: dashboard UX quick wins) | 1 domain scanned (dashboard) — grade D→D, no regression; FlowChad false positive from prev. audit corrected; staleness remains ∞ (docs/code-structure.md still absent) |
+| 2026-04-17 | PR #63 (ci: add Cloudflare Worker deploy workflow) | 1 domain scanned (ci — new) — grade F; 0 regressions, 0 improvements; speckit drift: none |
 
 ## Tooling
 
@@ -33,4 +35,4 @@
 
 **Hookshot**: No `doc-coverage.json` found. Hookshot has not been run on this repo. Pre-edit reminder hooks are absent — agents receive no doc-pointer prompts before editing core modules.
 
-**docs/code-structure.md**: Does not exist. This is the primary doc coverage artifact and its absence causes all domains to fail Signal 1. Creating this file would immediately improve grades across all 4 domains.
+**docs/code-structure.md**: Does not exist. This is the primary doc coverage artifact and its absence causes all domains to fail Signal 1. Creating this file would immediately improve grades across all 5 domains.
