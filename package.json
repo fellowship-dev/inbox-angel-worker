@@ -1,42 +1,42 @@
 {
-	"name": "inbox-angel-worker",
-	"version": "1.2.0",
-	"private": true,
-	"scripts": {
-		"postinstall": "npm install --prefix dashboard",
-		"deploy": "npm run build:dashboard && wrangler deploy",
-		"migrate": "wrangler d1 migrations apply DB --remote",
-		"dev": "wrangler dev",
-		"dev:dashboard": "npm --prefix dashboard run dev",
-		"build:dashboard": "npm --prefix dashboard run build",
-		"start": "wrangler dev",
-		"test": "vitest --config vitest.node.config.mts",
-		"test:workers": "vitest --config vitest.config.mts",
-		"cf-typegen": "wrangler types",
-		"seed:local": "npx tsx scripts/seed-demo.ts > /tmp/ia-seed.sql && wrangler d1 execute inbox-angel --local  --file=/tmp/ia-seed.sql; rm -f /tmp/ia-seed.sql",
-		"seed:remote": "npx tsx scripts/seed-demo.ts > /tmp/ia-seed.sql && wrangler d1 execute inbox-angel --remote --file=/tmp/ia-seed.sql; rm -f /tmp/ia-seed.sql",
-		"unseed:local": "wrangler d1 execute inbox-angel --local  --file=scripts/unseed-demo.sql",
-		"unseed:remote": "wrangler d1 execute inbox-angel --remote --file=scripts/unseed-demo.sql"
-	},
-	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.14.7",
-		"@cloudflare/workers-types": "^4.20260410.1",
-		"typescript": "^6.0.3",
-		"vitest": "^4.1.4",
-		"wrangler": "^4.82.2"
-	},
-	"dependencies": {
-		"fast-xml-parser": "^5.7.0",
-		"fflate": "^0.8.2"
-	},
-	"cloudflare": {
-		"bindings": {
-			"CLOUDFLARE_API_TOKEN": {
-				"description": "Runtime API token for Email Routing + DNS writes. Not the deploy token — create a separate one. See the README (Before you start) for step-by-step instructions and required permissions."
-			},
-			"CLOUDFLARE_ZONE_ID": {
-				"description": "Your Cloudflare Zone ID. Find it at dash.cloudflare.com → click your domain → right sidebar → Zone ID."
-			}
-		}
-	}
+  "name": "inbox-angel-worker",
+  "version": "1.2.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm install --prefix dashboard",
+    "deploy": "npm run build:dashboard && wrangler deploy",
+    "migrate": "wrangler d1 migrations apply DB --remote",
+    "dev": "wrangler dev",
+    "dev:dashboard": "npm --prefix dashboard run dev",
+    "build:dashboard": "npm --prefix dashboard run build",
+    "start": "wrangler dev",
+    "test": "vitest --config vitest.node.config.mts",
+    "test:workers": "vitest --config vitest.config.mts",
+    "cf-typegen": "wrangler types",
+    "seed:local": "npx tsx scripts/seed-demo.ts > /tmp/ia-seed.sql && wrangler d1 execute inbox-angel --local  --file=/tmp/ia-seed.sql; rm -f /tmp/ia-seed.sql",
+    "seed:remote": "npx tsx scripts/seed-demo.ts > /tmp/ia-seed.sql && wrangler d1 execute inbox-angel --remote --file=/tmp/ia-seed.sql; rm -f /tmp/ia-seed.sql",
+    "unseed:local": "wrangler d1 execute inbox-angel --local  --file=scripts/unseed-demo.sql",
+    "unseed:remote": "wrangler d1 execute inbox-angel --remote --file=scripts/unseed-demo.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.6",
+    "@cloudflare/workers-types": "^4.20260417.1",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4",
+    "wrangler": "^4.82.2"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.5.11",
+    "fflate": "^0.8.2"
+  },
+  "cloudflare": {
+    "bindings": {
+      "CLOUDFLARE_API_TOKEN": {
+        "description": "Runtime API token for Email Routing + DNS writes. Not the deploy token \u2014 create a separate one. See the README (Before you start) for step-by-step instructions and required permissions."
+      },
+      "CLOUDFLARE_ZONE_ID": {
+        "description": "Your Cloudflare Zone ID. Find it at dash.cloudflare.com \u2192 click your domain \u2192 right sidebar \u2192 Zone ID."
+      }
+    }
+  }
 }
