@@ -1,0 +1,46 @@
+name: score-circle
+description: >
+  Verify PR #61 Step 3 — ScoreCircle SVG sizing fix in Overview page.
+  SVG size increased from 36→40, radius 14→16, giving 15px inner ring radius.
+  Score numbers (2-digit/3-digit) must not overlap the ring.
+
+steps:
+  - name: open-dashboard
+    action: navigate
+    url: "{{TARGET_URL}}"
+    expect: InboxAngel dashboard loads — shows login or overview page
+
+  - name: screenshot-landing
+    action: screenshot
+    expect: page renders without blank screen
+
+  - name: check-auth-wall
+    action: find
+    selector: "input[type='email'], input[type='password']"
+    optional: true
+    expect: if login required, document it; if overview visible, proceed
+
+  - name: find-overview-section
+    action: find
+    selector: "[class*='Overview'], [class*='score'], [class*='Score'], svg circle"
+    optional: true
+    expect: overview section or score circle SVG element is visible
+
+  - name: screenshot-score-area
+    action: screenshot
+    expect: >
+      ScoreCircle element visible. The score number (e.g. 85, 100) is centered
+      inside the ring without clipping. No number-ring overlap.
+      SVG viewBox should accommodate size=40, r=16 (inner radius 15px).
+
+  - name: inspect-score-circle
+    action: find
+    selector: "svg[class*='score'], svg[class*='Score'], circle[r]"
+    optional: true
+    expect: SVG circle element found with r=16 (updated from r=14 in PR #61)
+
+  - name: screenshot-final
+    action: screenshot
+    expect: >
+      Final evidence screenshot showing score circle with correct sizing.
+      Score text must be fully visible inside the ring without overlap.
