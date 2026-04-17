@@ -4,7 +4,7 @@
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| dashboard | D | 2026-04-16 | FlowChad covered (overview/onboarding/email-check flows); no code-structure.md; no doc-coverage.json; staleness delta 40d (⚠️) |
+| dashboard | D | 2026-04-17 | No code-structure.md; no FlowChad dir (prev. audit false positive — e2e Playwright specs ≠ FlowChad flows); no doc-coverage.json; staleness ∞ (docs absent); 2 open issues ✅; 470 tests pass but no coverage report |
 | api | F | 2026-04-16 | No code-structure.md; no FlowChad flow for API layer; no doc-coverage.json; staleness delta 40d; tests exist (router.test.ts) but zero prose docs |
 | db | F | 2026-04-16 | No code-structure.md; no FlowChad flow; no doc-coverage.json; staleness delta 40d; migration layer entirely undocumented |
 | core | F | 2026-04-16 | env-utils.ts has no documentation coverage in any layer; no code-structure.md, no FlowChad, no doc-coverage.json |
@@ -25,6 +25,7 @@
 | Date | Trigger | Summary |
 |------|---------|---------|
 | 2026-04-16 | PR #60 (feat: subdomain support) | 4 domains scanned, 3 F grades, 1 D grade, 0 improvements — docs/code-structure.md absent repo-wide |
+| 2026-04-17 | PR #61 (feat: dashboard UX quick wins) | 1 domain scanned (dashboard) — grade D→D, no regression; FlowChad false positive from prev. audit corrected; staleness remains ∞ (docs/code-structure.md still absent) |
 
 ## Tooling
 
