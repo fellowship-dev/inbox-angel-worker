@@ -7,12 +7,12 @@
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| dashboard | D | 2026-04-21 | S2 ✅ FlowChad flows (domain-source-ip.yml, score-circle.yml); S1 ❌ no code-structure.md; S3 ❌ staleness ∞ (docs absent); S4 ✅ 2 open issues; S5 neutral (no coverage report); S6 ❌ no doc-coverage.json |
-| api | F | 2026-04-21 | No code-structure.md; no FlowChad flow for API layer; no doc-coverage.json; staleness ∞; 1 open issue ✅; tests exist (test/api/) but zero prose docs |
-| db | F | 2026-04-21 | No code-structure.md; no FlowChad flow; no doc-coverage.json; staleness ∞; 0 open issues ✅; migration layer entirely undocumented |
-| core | F | 2026-04-21 | No code-structure.md; no FlowChad flow; no doc-coverage.json; staleness ∞; 1 open issue ✅; env-utils.ts and index.ts have zero prose docs |
-| ci | F | 2026-04-21 | No code-structure.md; no FlowChad flow; staleness ∞; 0 open issues ✅; test coverage N/A; no doc-coverage.json |
-| qa | F | 2026-04-21 | S1 ❌ no code-structure.md; S2 N/A (meta-layer); S3 ❌ staleness ∞; S4 ✅ 0 issues; S5 neutral; S6 ❌ no doc-coverage.json |
+| dashboard | C | 2026-04-24 | S2 ✅ FlowChad; S3 ✅ docs/code-structure.md updated 2026-04-24; S1 ❌ dashboard not yet in code-structure.md; S6 ❌ hookshot not configured. 2/5 failing. ↑ from D. |
+| api | C | 2026-04-24 | S3 ✅ docs updated 2026-04-24; S4 ✅ 2 issues; S1 ❌ not in code-structure.md; S6 ❌ hookshot not configured. 2/4 failing. ↑ from F. |
+| db | C | 2026-04-24 | S3 ✅ docs updated 2026-04-24; S4 ✅ 1 issue; S1 ❌ not in code-structure.md; S6 ❌ hookshot not configured. 2/4 failing. ↑ from F. |
+| core | B | 2026-04-24 | S1 ✅ documented (PR #74); S3 ✅ docs updated 2026-04-24; S4 ✅ 1 issue; S6 ❌ hookshot not configured. 1/4 failing. ↑ from F. |
+| ci | C | 2026-04-24 | S3 ✅ docs updated 2026-04-24; S4 ✅ 1 issue; S1 ❌ not in code-structure.md; S6 ❌ hookshot not configured. 2/4 failing. ↑ from F. |
+| qa | C | 2026-04-24 | S3 ✅ docs updated 2026-04-24; S4 ✅ 1 issue; S1 ❌ not in code-structure.md (S2 N/A meta-layer); S6 ❌ hookshot not configured. 2/4 failing. ↑ from F. |
 
 ## Signal Applicability
 
@@ -20,7 +20,7 @@
 |--------|------------|--------|
 | S1 Doc Coverage | Yes | — |
 | S2 FlowChad | Yes (dashboard only) | Preact detected in dashboard/package.json; N/A for api, db, core, ci, qa (backend/meta domains) |
-| S3 Staleness | Yes | — |
+| S3 Staleness | Yes | docs/code-structure.md created 2026-04-24 (PR #74) — delta now measurable for all domains |
 | S4 Open Issues | Yes | — |
 | S5 Tests | Neutral | Tests exist (test/); no coverage report available |
 | S6 Hookshot | Yes | No `.claude/` directory — hookshot never configured |
@@ -31,7 +31,7 @@
 |--------|-------------|-----------|
 | Doc Coverage | Domain mentioned in docs/code-structure.md | ✅/❌ |
 | FlowChad Coverage | Entry in .flowchad/flows/ | ✅/❌ |
-| Staleness Delta | Days since last doc update vs last code commit | ✅ ≤30d / ⚠️ 31-60d / ❌ >60d |
+| Staleness Delta | Days since last code commit vs last doc update | ✅ ≤30d / ⚠️ 31-60d / ❌ >60d |
 | Open Issues | Issues mentioning domain | ✅ 0-3 / ⚠️ 4-6 / ❌ >6 |
 | Test Coverage | Coverage report if available | neutral if unavailable |
 | Hookshot Staleness | doc-coverage.json vs docs/code-structure.md age | ✅/⚠️/❌ |
@@ -40,95 +40,95 @@
 
 ### Signal Detail
 
-#### dashboard (last scanned: 2026-04-21, trigger: daily sweep)
+#### dashboard (last scanned: 2026-04-24, trigger: daily sweep)
 
 | Signal | Status | Detail |
 |--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` exists |
+| Doc coverage | ❌ | `docs/code-structure.md` exists but does not yet cover dashboard domain |
 | FlowChad coverage | ✅ | 2 flows: domain-source-ip.yml, score-circle.yml (dashboard UX) |
-| Staleness delta | ❌ | Code active (last commit 2026-04-17); docs/code-structure.md never written (∞ staleness) |
-| Open issues | ✅ | 2 open issues — within threshold |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; dashboard code last commit 2026-04-17 — docs newer |
+| Open issues | ✅ | 3 open issues — within threshold |
 | Test coverage | — | Tests exist (test/); no coverage report |
 | Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
 
-**Grade: D** — Unchanged. FlowChad S2 ✅; missing code-structure.md, hookshot.
+**Grade: C** — Improved from D. Staleness S3 resolved by docs file creation. Missing: code-structure.md dashboard section, hookshot.
 
-#### api (last scanned: 2026-04-21, trigger: daily sweep)
+#### api (last scanned: 2026-04-24, trigger: daily sweep)
 
 | Signal | Status | Detail |
 |--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` exists |
-| FlowChad coverage | ❌ | No FlowChad flow covering API layer |
-| Staleness delta | ❌ | Code active (last commit 2026-04-16); docs/code-structure.md never written (∞ staleness) |
-| Open issues | ✅ | 1 open issue — within threshold |
+| Doc coverage | ❌ | `docs/code-structure.md` exists but does not yet cover api domain |
+| FlowChad coverage | N/A | Backend domain — no FlowChad flow expected |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; src/api/ last commit 2026-04-16 — docs newer |
+| Open issues | ✅ | 2 open issues — within threshold |
 | Test coverage | — | Tests exist (test/api/); no coverage report |
 | Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
 
-**Grade: F** — Unchanged. No documentation of any kind for this domain.
+**Grade: C** — Improved from F. Staleness S3 resolved. Missing: code-structure.md api section, hookshot.
 
-#### db (last scanned: 2026-04-21, trigger: daily sweep)
-
-| Signal | Status | Detail |
-|--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` exists |
-| FlowChad coverage | ❌ | No FlowChad flow for database/migration layer |
-| Staleness delta | ❌ | Code active (last commit 2026-04-16); docs never written |
-| Open issues | ✅ | 0 open issues |
-| Test coverage | — | No coverage report |
-| Hookshot coverage | ❌ | Hookshot never configured |
-
-**Grade: F** — Unchanged. Migration layer (D1 + migrations/) entirely undocumented.
-
-#### core (last scanned: 2026-04-21, trigger: daily sweep)
+#### db (last scanned: 2026-04-24, trigger: daily sweep)
 
 | Signal | Status | Detail |
 |--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` exists |
-| FlowChad coverage | ❌ | No FlowChad flow for core config/env layer |
-| Staleness delta | ❌ | Code active (last commit 2026-04-16); docs never written |
+| Doc coverage | ❌ | `docs/code-structure.md` exists but does not yet cover db/migrations domain |
+| FlowChad coverage | N/A | Backend domain — no FlowChad flow expected |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; migrations/ last commit 2026-04-16 — docs newer |
 | Open issues | ✅ | 1 open issue — within threshold |
 | Test coverage | — | No coverage report |
-| Hookshot coverage | ❌ | Hookshot never configured |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
 
-**Grade: F** — Unchanged. env-utils.ts, index.ts, telemetry.ts have zero prose docs.
+**Grade: C** — Improved from F. Staleness S3 resolved. Missing: code-structure.md db section, hookshot.
 
-#### ci (last scanned: 2026-04-21, trigger: daily sweep)
+#### core (last scanned: 2026-04-24, trigger: daily sweep)
 
 | Signal | Status | Detail |
 |--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` exists |
-| FlowChad coverage | ❌ | No FlowChad flow for CI layer (N/A category) |
-| Staleness delta | ❌ | Workflows updated 2026-04-17; docs never written |
-| Open issues | ✅ | 0 open issues |
+| Doc coverage | ✅ | `docs/code-structure.md` covers core — src/index.ts, src/env-utils.ts, src/telemetry.ts (PR #74, 2026-04-24) |
+| FlowChad coverage | N/A | Backend entrypoint domain — no FlowChad flow expected |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; src/ last commit 2026-04-16 — docs newer |
+| Open issues | ✅ | 1 open issue — within threshold |
+| Test coverage | — | No coverage report |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
+
+**Grade: B** — Improved from F. Docs S1 ✅ and staleness S3 ✅ resolved by PR #74. Only missing: hookshot. Next step: configure hookshot to reach grade A.
+
+#### ci (last scanned: 2026-04-24, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | `docs/code-structure.md` exists but does not yet cover CI/.github domain |
+| FlowChad coverage | N/A | CI/meta domain — no FlowChad flow expected |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; .github/ last commit 2026-04-17 — docs newer |
+| Open issues | ✅ | 1 open issue — within threshold |
 | Test coverage | — | N/A for CI domain |
-| Hookshot coverage | ❌ | Hookshot never configured |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
 
-**Grade: F** — Unchanged. GitHub Actions workflows undocumented.
+**Grade: C** — Improved from F. Staleness S3 resolved. Missing: code-structure.md ci section, hookshot.
 
-#### qa (last scanned: 2026-04-21, trigger: daily sweep)
+#### qa (last scanned: 2026-04-24, trigger: daily sweep)
 
 | Signal | Status | Detail |
 |--------|--------|--------|
-| Doc coverage | ❌ | No `docs/code-structure.md` for QA/FlowChad layer |
+| Doc coverage | ❌ | `docs/code-structure.md` exists but does not yet cover QA/FlowChad layer |
 | FlowChad coverage | N/A | Meta-layer — FlowChad IS the QA tool |
-| Staleness delta | ❌ | .flowchad/ updated 2026-04-17; no prose docs written |
-| Open issues | ✅ | 0 open issues |
+| Staleness delta | ✅ | docs/code-structure.md updated 2026-04-24; .flowchad/ last commit 2026-04-17 — docs newer |
+| Open issues | ✅ | 1 open issue — within threshold |
 | Test coverage | — | Neutral |
-| Hookshot coverage | ❌ | Hookshot never configured |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
 
-**Grade: F** — Unchanged. FlowChad scaffold exists but the QA layer itself has zero prose documentation.
+**Grade: C** — Improved from F. Staleness S3 resolved. Missing: code-structure.md qa section, hookshot.
 
 ---
 
 ## Tooling
 
-**Speckit**: Installed locally in `.specify/` and gitignored per inbox-angel-worker convention. Not tracked in version control. Drift cannot be assessed remotely — dev should verify speckit version parity with `npx skills` registry.
+**Speckit**: Installed locally in `.specify/` and gitignored per inbox-angel-worker convention. Not tracked in version control. Drift cannot be assessed remotely — verify speckit version parity with `npx skills` registry on Spacestation.
 
-**Hookshot**: No `.claude/` directory found. Hookshot has never been configured. Pre-edit reminder hooks are absent — agents receive no doc-pointer prompts before editing core modules.
+**Hookshot**: No `.claude/` directory found. Hookshot has never been configured. Pre-edit reminder hooks are absent — agents receive no doc-pointer prompts before editing core modules. Setting up hookshot would flip S6 ✅ for all domains and upgrade grades across the board (core would reach A, others would reach B once docs sections are added).
 
-**FlowChad**: Two active flows: `domain-source-ip.yml` and `score-circle.yml` (dashboard UX). No flows yet for api, db, core, ci domains.
+**FlowChad**: Two active flows: `domain-source-ip.yml` and `score-circle.yml` (dashboard UX). No flows for api, db, core, ci domains.
 
-**docs/code-structure.md**: Does not exist. Primary doc coverage artifact. Its absence causes all domains to fail Signal 1. Creating this file would immediately improve grades across all 6 domains.
+**docs/code-structure.md**: Created 2026-04-24 via PR #74. Currently covers `core` domain only. Extending coverage to dashboard, api, db, ci, qa would flip S1 ✅ for those domains and upgrade them from C to B (pending hookshot).
 
 ---
 
@@ -141,3 +141,4 @@
 | 2026-04-17 | PR #63 (ci: add Cloudflare Worker deploy workflow) | 1 domain scanned (ci — new) — grade F; 0 regressions |
 | 2026-04-17 | PR #65 (chore: add FlowChad QA scaffold) | 6 domains full sweep; 0 grade changes; dashboard S2 flipped ✅; qa domain added (F) |
 | 2026-04-21 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. Deps merged (#66–#70) but no code changes. All grades stable: dashboard D, api/db/core/ci/qa F. |
+| 2026-04-24 | daily sweep | 6 domains scanned, 0 regressions, 6 improvements. PR #74 created docs/code-structure.md (core only) — S3 resolved for all domains, S1 resolved for core. Grades: core F→B, dashboard D→C, api/db/ci/qa F→C. Issues #71–#76 can be closed (all domains now C or better). |
