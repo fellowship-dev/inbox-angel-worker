@@ -172,6 +172,7 @@ dashboard/node_modules
 # https://github.com/Fellowship-dev/agents-gitignore
 CLAUDE.md
 .claude/
+!.claude/commands/
 AGENTS.md
 AGENTS.override.md
 codex.md
