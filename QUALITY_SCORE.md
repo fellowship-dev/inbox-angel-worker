@@ -7,20 +7,20 @@
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| core | B | 2026-05-15 | S1 ✅ docs/code-structure.md covers core fully; S3 ✅ docs (2026-04-24) vs code (2026-04-27) 3d delta; S4 ✅ (1 issue); S6 ❌ no doc-coverage.json. Grade unchanged B. |
-| dashboard | C | 2026-05-15 | S2 ✅ FlowChad 2 flows; S3 ✅; S4 ✅ (2 issues); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged C. |
-| api | C | 2026-05-15 | S3 ✅; S4 ✅ (1 issue); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged C. |
-| db | C | 2026-05-15 | S3 ✅; S4 ✅ (0 issues); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged C. |
-| ci | C | 2026-05-15 | S3 ✅; S4 ✅ (0 issues); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged C. |
-| qa | C | 2026-05-15 | S3 ✅; S4 ✅ (0 issues); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged C. |
+| core | B | 2026-05-15 | S1 ✅ docs/code-structure.md covers core fully; S3 ✅ (docs 2026-04-24 > code 2026-04-16); S4 ✅ (1 open); S6 ❌ no doc-coverage.json. Grade unchanged. |
+| dashboard | C | 2026-05-15 | S2 ✅ FlowChad 2 flows; S3 ✅ (docs newer than code); S4 ✅ (2 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| api | C | 2026-05-15 | S3 ✅; S4 ✅ (1 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| db | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| ci | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| qa | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
 
 ## Signal Applicability
 
 | Signal | Applicable? | Reason |
 |--------|------------|--------|
-| S1 Doc Coverage | Yes | docs/code-structure.md exists (created 2026-04-24); covers core domain only |
+| S1 Doc Coverage | Yes | docs/code-structure.md exists (2026-04-24); covers core domain only |
 | S2 FlowChad | Yes (dashboard only) | Preact detected in dashboard/package.json; N/A for api, db, core, ci, qa (backend/meta domains) |
-| S3 Staleness | Yes | docs/code-structure.md (2026-04-24); most recent code commit 2026-04-27 — delta 3d ✅ |
+| S3 Staleness | Yes | docs/code-structure.md (2026-04-24) newer than all code commits (2026-04-16/17) — all domains ✅ |
 | S4 Open Issues | Yes | — |
 | S5 Tests | Neutral | Tests exist (test/); no coverage report available |
 | S6 Hookshot | Yes | No `.claude/` directory — hookshot never configured |
@@ -36,23 +36,104 @@
 | Test Coverage | Coverage report if available | neutral if unavailable |
 | Hookshot Staleness | doc-coverage.json vs docs/code-structure.md age | ✅/⚠️/❌ |
 
+---
+
+### Signal Detail
+
+#### core (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ✅ | `docs/code-structure.md` covers src/index.ts, src/env-utils.ts, src/telemetry.ts in full |
+| FlowChad coverage | N/A | Backend core — UI flows not applicable |
+| Staleness delta | ✅ | Code last commit 2026-04-16; docs/code-structure.md 2026-04-24 — docs newer by 8 days |
+| Open issues | ✅ | 1 open issue |
+| Test coverage | — | Tests exist (test/); no coverage report |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
+
+**Grade: B** — Unchanged. Single remaining failure: hookshot not configured.
+
+#### dashboard (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | `docs/code-structure.md` does not cover the dashboard domain |
+| FlowChad coverage | ✅ | 2 flows: domain-source-ip.yml, score-circle.yml |
+| Staleness delta | ✅ | Code last commit 2026-04-17; docs/code-structure.md 2026-04-24 — docs newer by 7 days |
+| Open issues | ✅ | 2 open issues |
+| Test coverage | — | Tests exist (test/); no coverage report |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
+
+**Grade: C** — Unchanged. Missing: dashboard section in code-structure.md, hookshot.
+
+#### api (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | `docs/code-structure.md` does not cover the API layer |
+| FlowChad coverage | N/A | Backend API — UI flows not applicable |
+| Staleness delta | ✅ | Code last commit 2026-04-16; docs 2026-04-24 — docs newer |
+| Open issues | ✅ | 1 open issue |
+| Test coverage | — | Tests exist (test/api/); no coverage report |
+| Hookshot coverage | ❌ | No `.claude/` directory — hookshot never configured |
+
+**Grade: C** — Unchanged.
+
+#### db (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | Not in docs/code-structure.md |
+| FlowChad coverage | N/A | Backend db — flows not applicable |
+| Staleness delta | ✅ | Code older than docs |
+| Open issues | ✅ | 0 open issues |
+| Hookshot coverage | ❌ | Hookshot not configured |
+
+**Grade: C** — Unchanged.
+
+#### ci (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | GitHub Actions not in docs/code-structure.md |
+| FlowChad coverage | N/A | CI meta-layer |
+| Staleness delta | ✅ | CI code older than docs |
+| Open issues | ✅ | 0 open issues |
+| Hookshot coverage | ❌ | Hookshot not configured |
+
+**Grade: C** — Unchanged.
+
+#### qa (last scanned: 2026-05-15, trigger: daily sweep)
+
+| Signal | Status | Detail |
+|--------|--------|--------|
+| Doc coverage | ❌ | QA/FlowChad meta-layer not in docs/code-structure.md |
+| FlowChad coverage | N/A | Meta-layer |
+| Staleness delta | ✅ | Code older than docs |
+| Open issues | ✅ | 0 open issues |
+| Hookshot coverage | ❌ | Hookshot not configured |
+
+**Grade: C** — Unchanged.
+
+---
+
 ## Tooling
 
-### Speckit Drift (2026-05-15)
+**Speckit**: Installed locally in `.specify/` and gitignored per inbox-angel-worker convention. Drift cannot be assessed remotely.
+**Hookshot**: No `.claude/` directory found. Pre-edit reminder hooks absent — top recommendation to configure.
+**FlowChad**: Two active flows: `domain-source-ip.yml` and `score-circle.yml` (dashboard UX). No flows for api, db, core, ci domains.
+**docs/code-structure.md**: Created 2026-04-24. Covers `core` domain only. Expanding to cover api, db, dashboard, ci, qa would move 5 C-grade domains to B.
 
-**inbox-angel-worker exception:** speckit is installed locally and gitignored. Drift sync must be done locally on Spacestation. Remote check not applicable.
-
-## Entropy Findings — 2026-05-15
-
-### Stable issues (same low grade)
-- core: B (no change since 2026-04-27)
-- dashboard, api, db, ci, qa: C (no change since 2026-04-27)
-
-No regressions or improvements. No new code commits since 2026-04-27.
+---
 
 ## History
 
-| Date | Trigger | Domains scanned | Regressions | Improvements |
-|------|---------|-----------------|-------------|--------------|
-| 2026-04-27 | weekly sweep | 6 scanned | baseline | baseline |
-| 2026-05-15 | weekly sweep | 6 scanned | 0 | 0; no code changes since last scan |
+| Date | Trigger | Summary |
+|------|---------|---------|
+| 2026-04-16 | PR #60 (feat: subdomain support) | 4 domains scanned, 3 F grades, 1 D grade — docs/code-structure.md absent |
+| 2026-04-17 | PR #61 (feat: dashboard UX quick wins) | 1 domain scanned (dashboard) — grade D, no regression |
+| 2026-04-17 | PR #63 (ci: add Cloudflare Worker deploy workflow) | 1 domain scanned (ci — new) — grade F |
+| 2026-04-17 | PR #65 (chore: add FlowChad QA scaffold) | 6 domains full sweep; dashboard S2 flipped ✅; qa domain added (F) |
+| 2026-04-21 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. All grades stable. |
+| 2026-04-27 | daily sweep | 6 domains scanned, 0 regressions, 5 improvements. docs/code-structure.md created 2026-04-24 → S3 ✅ all domains, S1 ✅ core. core: F→B, dashboard: D→C, api/db/ci/qa: F→C. |
+| 2026-05-15 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. All grades stable: core B, dashboard/api/db/ci/qa C. Last code commit 2026-04-27 (entropy commit). Hookshot still absent — universal remaining gap. |
