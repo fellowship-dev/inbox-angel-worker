@@ -7,12 +7,12 @@
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| core | B | 2026-05-15 | S1 ✅ docs/code-structure.md covers core fully; S3 ✅ (docs 2026-04-24 > code 2026-04-16); S4 ✅ (1 open); S6 ❌ no doc-coverage.json. Grade unchanged. |
-| dashboard | C | 2026-05-15 | S2 ✅ FlowChad 2 flows; S3 ✅ (docs newer than code); S4 ✅ (2 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
-| api | C | 2026-05-15 | S3 ✅; S4 ✅ (1 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
-| db | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
-| ci | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
-| qa | C | 2026-05-15 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| core | B | 2026-05-18 | S1 ✅ docs/code-structure.md covers core fully; S3 ✅ (docs 2026-04-24 > code 2026-04-16); S4 ✅ (1 open); S6 ❌ no doc-coverage.json. Grade unchanged. |
+| dashboard | C | 2026-05-18 | S2 ✅ FlowChad 2 flows; S3 ✅ (docs newer than code); S4 ✅ (2 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| api | C | 2026-05-18 | S3 ✅; S4 ✅ (1 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| db | C | 2026-05-18 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| ci | C | 2026-05-18 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
+| qa | C | 2026-05-18 | S3 ✅; S4 ✅ (0 open); S1 ❌ not in code-structure.md; S6 ❌ no doc-coverage.json. Grade unchanged. |
 
 ## Signal Applicability
 
@@ -137,3 +137,4 @@
 | 2026-04-21 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. All grades stable. |
 | 2026-04-27 | daily sweep | 6 domains scanned, 0 regressions, 5 improvements. docs/code-structure.md created 2026-04-24 → S3 ✅ all domains, S1 ✅ core. core: F→B, dashboard: D→C, api/db/ci/qa: F→C. |
 | 2026-05-15 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. All grades stable: core B, dashboard/api/db/ci/qa C. Last code commit 2026-04-27 (entropy commit). Hookshot still absent — universal remaining gap. |
+| 2026-05-18 | daily sweep | 6 domains scanned, 0 regressions, 0 improvements. Grades stable. Hookshot still absent. |
